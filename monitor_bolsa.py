@@ -4,8 +4,16 @@ import requests
 from datetime import datetime
 
 # --- CONFIGURACIÓN DE TELEGRAM (¡PON TUS DATOS AQUÍ!) ---
-TELEGRAM_TOKEN = "8544416493:AAFm0odmHAqexutmqN843o-vcNNqMj2dQbY" 
-TELEGRAM_CHAT_ID = "31667656"
+# --- CONFIGURACIÓN DE TELEGRAM (SEGURA) ---
+# Ahora le decimos al código: "Busca las llaves en la caja fuerte de Streamlit, no aquí"
+try:
+    TELEGRAM_TOKEN = st.secrets["TELEGRAM_TOKEN"]
+    TELEGRAM_CHAT_ID = st.secrets["TELEGRAM_CHAT_ID"]
+except:
+    # Esto es por si lo corres en tu PC y no has configurado secrets locales
+    st.error("Error: No se encontraron las claves de Telegram.")
+    TELEGRAM_TOKEN = ""
+    TELEGRAM_CHAT_ID = ""
 
 # --- Configuración de la Página ---
 st.set_page_config(page_title="Monitor Pro v2", layout="wide")
@@ -82,3 +90,4 @@ if st.sidebar.button("Enviar Mensaje de Prueba"):
         st.sidebar.error("❌ Error. Revisa que el TOKEN y CHAT_ID estén dentro de comillas y sean correctos.")
 
         
+
