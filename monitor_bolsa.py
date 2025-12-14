@@ -6,55 +6,76 @@ from datetime import datetime
 
 # --- CONFIGURACIÓN DE LA PÁGINA WEB ---
 st.set_page_config(
-    page_title="Monitor Bolsa Pro",
-    page_icon="📈",
-    layout="wide"  # Usa todo el ancho de la pantalla
+    page_title="Monitor Bolsa Chile Pro",
+    page_icon="🇨🇱",
+    layout="wide"
 )
 
-# Estilo CSS para que se vea modo "Dark Finance"
+# Estilo CSS "Dark Finance" mejorado
 st.markdown("""
 <style>
     [data-testid="stMetricValue"] {
-        font-size: 26px;
-        font-weight: bold;
+        font-size: 24px;
+        font-weight: 700;
+    }
+    [data-testid="stMetricDelta"] {
+        font-size: 16px;
     }
     div[data-testid="metric-container"] {
         background-color: #1E1E1E;
-        border: 1px solid #333;
-        padding: 15px;
-        border-radius: 5px;
-        color: white;
+        border: 1px solid #444;
+        padding: 10px;
+        border-radius: 8px;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.5);
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- TUS CREDENCIALES (Cámbialas tras revocar las viejas) ---
-# --- CONFIGURACIÓN DE TELEGRAM (SEGURA) ---
-# Ahora le decimos al código: "Busca las llaves en la caja fuerte de Streamlit, no aquí"
+# --- GESTIÓN DE CREDENCIALES (TELEGRAM) ---
+# Intentamos leer de secrets (Nube), si no, usamos valores vacíos para que no falle localmente
 try:
     TELEGRAM_TOKEN = st.secrets["TELEGRAM_TOKEN"]
     TELEGRAM_CHAT_ID = st.secrets["TELEGRAM_CHAT_ID"]
 except:
-    # Esto es por si lo corres en tu PC y no has configurado secrets locales
-    st.error("Error: No se encontraron las claves de Telegram.")
-    TELEGRAM_TOKEN = ""
+    # Valores por defecto para que el script corra sin error en tu PC
+    TELEGRAM_TOKEN = "" 
     TELEGRAM_CHAT_ID = ""
 
-# --- CONFIGURACIÓN ---
-UMBRAL_ALERTA = 3.0
+# --- CONFIGURACIÓN DE ACTIVOS ---
+UMBRAL_ALERTA = 2.5 # % para gatillar alerta visual
+
 TICKERS = {
+    # >> MACROECONOMÍA
     "USD/CLP": "CLP=X",
     "Cobre": "HG=F",
-    "WTI Oil": "CL=F",
-    "LATAM": "LTM.SN",
+    "Petróleo WTI": "CL=F",
+    
+    # >> COMMODITIES & ENERGÍA
+    "SQM-B (Litio)": "SQM-B.SN",
+    "Copec": "COPEC.SN",
+    
+    # >> BANCA
+    "Banco de Chile": "CHILE.SN",
+    "Banco Bci": "BCI.SN",
+    
+    # >> RETAIL & MALLS
     "Falabella": "FALABELLA.SN",
-    "Banco Chile": "CHILE.SN",
     "Cencosud": "CENCOSUD.SN",
-    "Ripley": "RIPLEY.SN"
+    "Ripley": "RIPLEY.SN",
+    "Parque Arauco": "PARAUCO.SN",
+    
+    # >> OTROS SECTORES
+    "LATAM": "LTM.SN",
+    "Sonda (Tech)": "SONDA.SN",
+    "Socovesa": "SOCOVESA.SN"
 }
 
+# --- FUNCIONES ---
+
 def enviar_telegram(mensaje):
-    if TELEGRAM_TOKEN == "TU_NUEVO_TOKEN_AQUI": return
+    """Envía alerta solo si las credenciales existen"""
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID: return
+    
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {"chat_id": TELEGRAM_CHAT_ID, "text": mensaje, "parse_mode": "Markdown"}
     try:
@@ -63,22 +84,26 @@ def enviar_telegram(mensaje):
         pass
 
 def obtener_datos():
+    """Descarga datos de mercado"""
     data_display = []
     codigos = list(TICKERS.values())
     
     try:
-        # Descargamos datos de 1 día con intervalo de 1 minuto o día
+        # Descarga masiva optimizada
         df = yf.download(codigos, period="1d", interval="1d", progress=False)
         
         for nombre, symbol in TICKERS.items():
             try:
-                # Acceso seguro a los datos de Yahoo (manejo de MultiIndex)
+                # Lógica para manejar si yfinance devuelve 1 o varios activos
                 if len(codigos) > 1:
                     precio = df['Close'][symbol].iloc[-1]
                     apertura = df['Open'][symbol].iloc[-1]
                 else:
                     precio = df['Close'].iloc[-1]
                     apertura = df['Open'].iloc[-1]
+
+                # Evitar división por cero
+                if apertura == 0: continue
 
                 var_pct = ((precio - apertura) / apertura) * 100
                 es_alerta = abs(var_pct) >= UMBRAL_ALERTA
@@ -92,45 +117,51 @@ def obtener_datos():
             except:
                 continue
     except Exception as e:
-        st.error(f"Error de conexión con Yahoo Finance: {e}")
+        st.error(f"Error conectando a Yahoo Finance. Revisa tu internet.")
         return []
     
     return data_display
 
-# --- INTERFAZ VISUAL (LO QUE SE VE EN LA WEB) ---
+# --- INTERFAZ DE USUARIO (DASHBOARD) ---
 
-st.title("📊 Monitor Bolsa Chile - Inversionista Pro")
-st.markdown(f"**Última actualización:** {datetime.now().strftime('%H:%M:%S')} | *Refresco automático cada 60s*")
+col_t1, col_t2 = st.columns([4,1])
+with col_t1:
+    st.title("📊 Bolsa de Santiago Pro")
+    st.caption("Monitoreo en tiempo real (15 min delay) | Fuente: Yahoo Finance")
+with col_t2:
+    if st.button("🔄 Refrescar"):
+        st.rerun()
+
 st.markdown("---")
 
 datos = obtener_datos()
 
 if not datos:
-    st.warning("Cargando datos... espera un momento.")
+    st.info("⏳ Conectando con el mercado... espera unos segundos.")
 else:
-    # Crear filas de 4 columnas para las tarjetas
-    cols = st.columns(4)
+    # Grid responsivo: 4 tarjetas por fila
+    columnas_por_fila = 4
+    cols = st.columns(columnas_por_fila)
     
     for index, item in enumerate(datos):
-        col_actual = cols[index % 4]
+        col_actual = cols[index % columnas_por_fila]
         
         with col_actual:
-            # Formato de color automático (Verde si sube, Rojo si baja)
+            # Determinamos el color de la flecha
             st.metric(
                 label=item['Nombre'],
                 value=f"$ {item['Precio']:,.2f}",
                 delta=f"{item['Var']:.2f}%"
             )
             
-            # Si hay alerta, mostrar un aviso visual y mandar Telegram
             if item['Alerta']:
-                st.error("🚨 ¡ALERTA DE VOLATILIDAD!")
-                # Lógica simple para no spamear Telegram en cada recarga (opcional)
-                if "alerta_enviada" not in st.session_state:
-                     enviar_telegram(f"⚠️ *ALERTA WEB*: {item['Nombre']} varió un {item['Var']:.2f}%")
-                     st.session_state.alerta_enviada = True
+                st.warning("🔥 Alta Volatilidad")
+                # Control de estado para no spamear Telegram
+                clave_sesion = f"msg_{item['Nombre']}_{datetime.now().hour}"
+                if clave_sesion not in st.session_state:
+                     enviar_telegram(f"⚠️ *ALERTA*: {item['Nombre']} se mueve un {item['Var']:.2f}%")
+                     st.session_state[clave_sesion] = True
 
 # --- RECARGA AUTOMÁTICA ---
-# Esto reemplaza al "while True"
 time.sleep(60)
 st.rerun()
