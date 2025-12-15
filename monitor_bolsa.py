@@ -58,34 +58,21 @@ st.markdown(f"""
 UMBRAL_ALERTA = 2.5 
 
 TICKER_CATEGORIES = {
-    "MACROECONOMÍA 🌎": {
-        "USD/CLP": "CLP=X", # Ticker de divisas de Yahoo/AV
-        "Cobre": "HG=F", 
-        "Petróleo WTI": "CL=F",
-    },
-    "COMMODITIES & ENERGÍA 🔋": {
-        "SQM-B (Litio)": "SQM-B.SN", 
-        "Copec": "COPEC.SN",
-    },
-    "BANCA 🏦": {
-        "Banco de Chile": "CHILE.SN", 
-        "Banco Bci": "BCI.SN",
-    },
-    "RETAIL & MALLS 🛍️": {
-        "Falabella": "FALABELLA.SN", 
-        "Cencosud": "CENCOSUD.SN",
-        "Ripley": "RIPLEY.SN", 
-        "Parque Arauco": "PARAUCO.SN",
-    },
-    "OTROS SECTORES 🚀": {
-        "LATAM": "LTM.SN", 
-        "Sonda (Tech)": "SONDA.SN", 
-        "Socovesa": "SOCOVESA.SN"
-    },
-    "PRUEBA (Global) 🌐": {
+    # Estos tickers son globales y funcionan bien en AV/YF. Usamos el ticker base.
+    "ACCIONES GLOBALES 🌐": {
         "Apple (AAPL)": "AAPL",
         "Amazon (AMZN)": "AMZN",
-    }
+        "Coca Cola (KO)": "KO",
+        "Petróleo (USO)": "USO", # Usamos un ETF de Petróleo en lugar del commodity CL=F
+    },
+    # Mantenemos las acciones chilenas clave sin el sufijo, a ver si AV las encuentra por el ticker base
+    "BOLSA DE SANTIAGO 🇨🇱": {
+        "SQM-B (Litio)": "SQM", 
+        "Copec": "COPEC",
+        "Falabella": "FALABELLA", 
+        "Cencosud": "CENCOSUD",
+        "LATAM": "LTM", 
+    },
 }
 
 TICKERS_PLANO = {nombre: symbol for cat in TICKER_CATEGORIES.values() for nombre, symbol in cat.items()}
@@ -379,3 +366,4 @@ else:
             
     # --- RECARGA AUTOMÁTICA (SIMPLE) ---
     st.caption("Los datos se actualizarán al presionar el botón '🔄 Refrescar Datos'.")
+
