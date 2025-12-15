@@ -79,30 +79,30 @@ st.markdown(f"""
 UMBRAL_ALERTA = 2.5 
 
 TICKER_CATEGORIES = {
-    "MACROECONOMÍA 🌎": {
-        "USD/CLP": "USDCLP", # FMP usa pares de divisas directos
-        "Cobre": "HG", 
-        "Petróleo WTI": "CL",
-    },
-    "COMMODITIES & ENERGÍA 🔋": {
-        "SQM-B (Litio)": "SQM", 
-        "Copec": "COPEC",
-    },
-    "BANCA 🏦": {
-        "Banco de Chile": "CHILE", 
-        "Banco Bci": "BCI",
-    },
-    "RETAIL & MALLS 🛍️": {
-        "Falabella": "FALABELLA", 
-        "Cencosud": "CENCOSUD",
-        "Ripley": "RIPLEY", 
-        "Parque Arauco": "PARAUCO",
-    },
-    "OTROS SECTORES 🚀": {
-        "LATAM": "LTM", 
-        "Sonda (Tech)": "SONDA", 
-        "Socovesa": "SOCOVESA"
-    },
+#    "MACROECONOMÍA 🌎": {
+ #       "USD/CLP": "USDCLP", # FMP usa pares de divisas directos
+  #      "Cobre": "HG", 
+   #     "Petróleo WTI": "CL",
+   # },
+  #  "COMMODITIES & ENERGÍA 🔋": {
+   #     "SQM-B (Litio)": "SQM", 
+    #    "Copec": "COPEC",
+  #  },
+   # "BANCA 🏦": {
+    #    "Banco de Chile": "CHILE", 
+     #   "Banco Bci": "BCI",
+   # },
+   # "RETAIL & MALLS 🛍️": {
+    #    "Falabella": "FALABELLA", 
+     #   "Cencosud": "CENCOSUD",
+      #  "Ripley": "RIPLEY", 
+       # "Parque Arauco": "PARAUCO",
+   # },
+   # "OTROS SECTORES 🚀": {
+    #    "LATAM": "LTM", 
+     #   "Sonda (Tech)": "SONDA", 
+      #  "Socovesa": "SOCOVESA"
+    # },
     "PRUEBA (Global) 🌐": {
         "Apple (AAPL)": "AAPL",
         "Amazon (AMZN)": "AMZN",
@@ -291,7 +291,7 @@ def obtener_datos():
             continue 
 
         # --- PAUSA DE SEGURIDAD PARA LA API GRATUITA ---
-        time.sleep(1.1) 
+      #  time.sleep(1.1) 
     
     # Manejo de fallos 
     if not data_display:
@@ -407,3 +407,4 @@ else:
             
     # --- RECARGA AUTOMÁTICA (SIMPLE) ---
     st.caption("Los datos se actualizarán al presionar el botón '🔄 Refrescar Datos'.")
+
