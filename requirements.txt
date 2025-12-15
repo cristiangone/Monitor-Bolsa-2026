@@ -1,5 +1,7 @@
+# Contenido del archivo requirements.txt
 streamlit
-yfinance
 pandas
-plotly
 requests
+plotly
+alpha_vantage
+
