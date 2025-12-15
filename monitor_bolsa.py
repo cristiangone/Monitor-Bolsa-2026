@@ -161,6 +161,16 @@ def obtener_datos():
             response = requests.get(base_url, params=params)
             data_raw = response.json()
 
+            except Exception as e:
+            # st.error(f"Error AV en {nombre}: {e}") # Descomentar para debug
+            tickers_fallidos.append(nombre)
+            continue
+            
+           # --- SOLUCIÓN PARA EL LÍMITE DE LLAMADAS DE ALPHA VANTAGE ---
+           # Espera 1 segundo entre llamadas para no exceder el límite de 5 llamadas/min.
+           time.sleep(1) 
+    
+          
             # 2. VALIDACIÓN Y PARSING
             if "Time Series (Daily)" not in data_raw:
                 tickers_fallidos.append(nombre)
@@ -368,4 +378,3 @@ else:
             
     # --- RECARGA AUTOMÁTICA (SIMPLE) ---
     st.caption("Los datos se actualizarán al presionar el botón '🔄 Refrescar Datos'.")
-
