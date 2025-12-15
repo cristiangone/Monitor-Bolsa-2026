@@ -5,11 +5,10 @@ import time
 from datetime import datetime
 from plotly.subplots import make_subplots 
 import plotly.graph_objects as go
-# import yfinance as yf # <-- YA NO ES NECESARIO
 
 # --- CONFIGURACIÓN DE LA PÁGINA WEB ---
 st.set_page_config(
-    page_title="Monitor Bolsa Chile | AV Stable Edition", # Cambiamos el título
+    page_title="Monitor Bolsa Global | AV Stable",
     page_icon="📈",
     layout="wide"
 )
@@ -20,11 +19,64 @@ try:
     TELEGRAM_TOKEN = st.secrets.get("TELEGRAM_TOKEN")
     TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID")
 except KeyError:
-    st.error("🛑 ERROR: Clave ALPHA_VANTAGE_API_KEY no encontrada.")
+    # Si estás en local y no tienes secrets.toml, usa una clave demo o tu clave directa aquí para probar
+    # ALPHA_VANTAGE_API_KEY = "TU_CLAVE_AQUI" 
+    st.error("🛑 ERROR: Clave ALPHA_VANTAGE_API_KEY no encontrada en secrets.")
     ALPHA_VANTAGE_API_KEY = "DEMO"
     
-# --- DEFINICIÓN DE PALETAS Y ESTILOS (Se mantienen) ---
-# ... (Bloque de PALETTES, colores y CSS se mantiene) ...
+# --- DEFINICIÓN DE PALETAS Y ESTILOS ---
+PALETTES = {
+    "Dark": {
+        "BACKGROUND": "#0d1117", "CARD_BG": "#161b22", "BORDER": "#30363d",
+        "TEXT_NEUTRAL": "#e0e0e0", "POSITIVE": "#00b894", "NEGATIVE": "#d63031", 
+        "ACCENT": "#58a6ff", 
+    },
+    "Light": {
+        "BACKGROUND": "#f0f2f6", "CARD_BG": "#ffffff", "BORDER": "#e6e6e6",
+        "TEXT_NEUTRAL": "#1c1e21", "POSITIVE": "#00a382", "NEGATIVE": "#cc3333", 
+        "ACCENT": "#007bff", 
+    }
+}
+
+if 'theme' not in st.session_state:
+    st.session_state['theme'] = "Dark"
+
+CURRENT_THEME = PALETTES[st.session_state['theme']]
+COLOR_BACKGROUND = CURRENT_THEME["BACKGROUND"]
+COLOR_CARD_BG = CURRENT_THEME["CARD_BG"]
+COLOR_BORDER = CURRENT_THEME["BORDER"]
+COLOR_TEXT_NEUTRAL = CURRENT_THEME["TEXT_NEUTRAL"]
+COLOR_POSITIVE = CURRENT_THEME["POSITIVE"]
+COLOR_NEGATIVE = CURRENT_THEME["NEGATIVE"]
+COLOR_ACCENT = CURRENT_THEME["ACCENT"]
+
+# --- ESTILOS CSS ---
+st.markdown(f"""
+<style>
+    .stApp {{ background-color: {COLOR_BACKGROUND}; color: {COLOR_TEXT_NEUTRAL}; }}
+    h1, h2, h3, h4, p, label {{ color: {COLOR_TEXT_NEUTRAL} !important; }}
+    
+    div[data-testid="metric-container"] {{
+        background-color: {COLOR_CARD_BG}; border: 1px solid {COLOR_BORDER};
+        padding: 20px; border-radius: 16px; box-shadow: 0 6px 12px rgba(0,0,0,0.4);
+        margin-bottom: 25px; transition: transform 0.3s ease-in-out, box-shadow 0.3s ease-in-out;
+    }}
+    div[data-testid="metric-container"]:hover {{ transform: translateY(-5px); box-shadow: 0 10px 20px rgba(0,0,0,0.6); }}
+    [data-testid="stMetricValue"] {{ font-size: 32px !important; font-weight: 800; color: {COLOR_ACCENT}; margin-bottom: 8px; }}
+    [data-testid="stMetricDelta"] {{ font-size: 20px !important; font-weight: 700; }}
+    [data-testid="stMetricDelta"] svg[fill="#009943"] + div {{ color: {COLOR_POSITIVE} !important; }}
+    [data-testid="stMetricDelta"] svg[fill="#ff4b4b"] + div {{ color: {COLOR_NEGATIVE} !important; }}
+
+    .volume-subtitle {{
+        font-size: 13px; color: #959da5; margin-top: -10px; margin-bottom: 5px; font-weight: 500;
+    }}
+    
+    .stTabs [data-baseweb="tab-list"] {{ gap: 15px; }}
+    .stTabs [data-baseweb="tab"] {{ border-radius: 6px 6px 0 0; background: {COLOR_CARD_BG}; color: {COLOR_TEXT_NEUTRAL}; }}
+    .stTabs [aria-selected="true"] {{ border-bottom: 3px solid {COLOR_ACCENT} !important; color: {COLOR_ACCENT} !important; }}
+</style>
+""", unsafe_allow_html=True)
+
 
 # --- CONFIGURACIÓN DE ACTIVOS (SÓLO GLOBALES ESTABLES) ---
 UMBRAL_ALERTA = 2.5 
@@ -45,18 +97,20 @@ TICKER_CATEGORIES = {
     },
 }
 
-# --- LÓGICA DE MAPEO SIMPLIFICADA (SOLUCIÓN DEL KEYERROR) ---
+# --- LÓGICA DE MAPEO CORREGIDA (SOLUCIÓN DEL KEYERROR) ---
+# Aquí unificamos todo en un solo diccionario plano, sin buscar claves antiguas
 TICKERS_PLANO = {nombre: symbol for cat in TICKER_CATEGORIES.values() for nombre, symbol in cat.items()}
 
-# --- FUNCIONES DE ANÁLISIS TÉCNICO (Se mantienen) ---
-def calcular_bollinger_bands(df, window=20, num_std=2): # ... (cuerpo se mantiene)
+
+# --- FUNCIONES DE ANÁLISIS TÉCNICO ---
+def calcular_bollinger_bands(df, window=20, num_std=2):
     df['SMA'] = df['close'].rolling(window=window).mean()
     df['STD'] = df['close'].rolling(window=window).std()
     df['Upper'] = df['SMA'] + (df['STD'] * num_std)
     df['Lower'] = df['SMA'] - (df['STD'] * num_std)
     return df.dropna()
-# ... (calcular_rsi y calcular_macd se mantienen) ...
-def calcular_rsi(df, window=14): # ... (cuerpo se mantiene)
+
+def calcular_rsi(df, window=14):
     delta = df['close'].diff()
     gain = delta.where(delta > 0, 0)
     loss = -delta.where(delta < 0, 0)
@@ -66,7 +120,7 @@ def calcular_rsi(df, window=14): # ... (cuerpo se mantiene)
     df['RSI'] = 100 - (100 / (1 + rs))
     return df
 
-def calcular_macd(df, fast_period=12, slow_period=26, signal_period=9): # ... (cuerpo se mantiene)
+def calcular_macd(df, fast_period=12, slow_period=26, signal_period=9):
     df['EMA_Fast'] = df['close'].ewm(span=fast_period, adjust=False).mean()
     df['EMA_Slow'] = df['close'].ewm(span=slow_period, adjust=False).mean()
     df['MACD'] = df['EMA_Fast'] - df['EMA_Slow']
@@ -74,7 +128,15 @@ def calcular_macd(df, fast_period=12, slow_period=26, signal_period=9): # ... (c
     df['MACD_Hist'] = df['MACD'] - df['Signal_Line']
     return df
 
-# ... (enviar_telegram se mantiene) ...
+def enviar_telegram(mensaje):
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID: return
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": mensaje, "parse_mode": "Markdown"}
+    try:
+        requests.post(url, json=payload, timeout=2)
+    except:
+        pass
+
 
 @st.cache_data(ttl=60)
 def obtener_datos():
@@ -100,7 +162,6 @@ def obtener_datos():
             if "Time Series (Daily)" not in data_raw:
                 tickers_fallidos.append(nombre)
             else:
-                # ... (Lógica de parsing de AV, cálculos de indicadores y creación de Plotly se mantiene) ...
                 df_hist_individual = pd.DataFrame.from_dict(data_raw["Time Series (Daily)"], orient='index')
                 df_hist_individual = df_hist_individual.rename(columns=lambda x: x.split('. ')[1])
                 df_hist_individual.index = pd.to_datetime(df_hist_individual.index)
@@ -134,7 +195,7 @@ def obtener_datos():
                         
                     es_alerta = abs(var_pct) >= UMBRAL_ALERTA
 
-                    # 5. CREACIÓN DE FIGURA PLOTLY (mismo código de subplots)
+                    # 5. CREACIÓN DE FIGURA PLOTLY
                     fig = make_subplots(
                         rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03,
                         row_heights=[0.5, 0.25, 0.25]
@@ -148,7 +209,6 @@ def obtener_datos():
                         name='Velas'
                     ), row=1, col=1)
 
-                    # Bandas de Bollinger (SMA, Upper, Lower)
                     fig.add_trace(go.Scatter(x=data_velas.index, y=data_velas['Upper'], line=dict(color='rgba(255, 165, 0, 0.8)', width=1), name='Banda Superior'), row=1, col=1)
                     fig.add_trace(go.Scatter(x=data_velas.index, y=data_velas['SMA'], line=dict(color=COLOR_ACCENT, width=1.5), name='SMA 20'), row=1, col=1)
                     fig.add_trace(go.Scatter(x=data_velas.index, y=data_velas['Lower'], line=dict(color='rgba(255, 165, 0, 0.8)', width=1), name='Banda Inferior'), row=1, col=1)
@@ -175,15 +235,10 @@ def obtener_datos():
                         font=dict(color=COLOR_TEXT_NEUTRAL)
                     )
 
-                    # Configuración de Ejes
                     fig.update_yaxes(title_text="Precio / BB", row=1, col=1, showgrid=False)
                     fig.update_yaxes(title_text="RSI", range=[0, 100], row=2, col=1, showgrid=True, gridcolor=COLOR_BORDER)
                     fig.update_yaxes(title_text="MACD", row=3, col=1, showgrid=True, gridcolor=COLOR_BORDER)
-                    fig.update_xaxes(row=1, col=1, showgrid=False)
-                    fig.update_xaxes(row=2, col=1, showgrid=False)
-                    fig.update_xaxes(row=3, col=1, showgrid=False)
-
-
+                    
                     data_display.append({
                         "Nombre": nombre, "Symbol": symbol, "Precio": precio, 
                         "Var": var_pct, "Alerta": es_alerta, "Figura_Plotly": fig,
@@ -209,9 +264,7 @@ def obtener_datos():
     return data_display
 
 
-
 # --- INTERFAZ DE USUARIO (DASHBOARD) ---
-# --- SELECTOR DE TEMA ---
 def switch_theme():
     if st.session_state['theme'] == "Dark":
         st.session_state['theme'] = "Light"
@@ -229,8 +282,8 @@ with st.sidebar:
 
     st.divider()
     
-st.title("📈 Monitor Bolsa de Santiago")
-st.caption("Gráfico de Velas con BB, RSI y MACD | Fuente: Híbrido (YFinance y Alpha Vantage)")
+st.title("📈 Monitor Bolsa Global")
+st.caption("Gráfico de Velas con BB, RSI y MACD | Fuente: Alpha Vantage Stable")
 
 refresh_placeholder = st.empty()
 st.divider()
@@ -242,7 +295,7 @@ datos_completos = obtener_datos()
 if not datos_completos:
     with loading_message_placeholder:
         st.info("⏳ Conectando con el mercado...")
-        st.caption("La carga inicial con Alpha Vantage tardará unos 2 minutos. Por favor, no actualice el navegador.")
+        st.caption("La carga inicial tardará unos 2 minutos para respetar los límites de la API gratuita. Por favor, espera.")
 else:
     loading_message_placeholder.empty()
     st.caption("Nota: Los datos mostrados son del último cierre disponible.")
@@ -275,17 +328,11 @@ else:
                 
                 with col_actual:
                     with st.container(border=False):
-                        
-                        # MOSTRAR EL VOLUMEN
                         volumen = item.get('Volumen', 0)
                         if volumen > 0:
                             volumen_formateado = f"{volumen:,.0f}".replace(",", "_").replace(".", ",").replace("_", ".")
-                            st.markdown(
-                                f"<div class='volume-subtitle'>Vol: {volumen_formateado}</div>", 
-                                unsafe_allow_html=True
-                            )
+                            st.markdown(f"<div class='volume-subtitle'>Vol: {volumen_formateado}</div>", unsafe_allow_html=True)
 
-                        # Métrica de precio y variación
                         st.metric(
                             label=item['Nombre'],
                             value=f"$ {item['Precio']:,.2f}",
@@ -293,15 +340,9 @@ else:
                             delta_color="normal"
                         )
                         
-                        # Gráfico de Velas de Plotly
                         if 'Figura_Plotly' in item:
-                            st.plotly_chart(
-                                item['Figura_Plotly'], 
-                                use_container_width=True, 
-                                config={'displayModeBar': False} 
-                            )
+                            st.plotly_chart(item['Figura_Plotly'], use_container_width=True, config={'displayModeBar': False})
 
-                        # Alerta de volatilidad
                         if item['Alerta']:
                             st.warning("🔥 ALTA VOLATILIDAD")
                             clave_sesion = f"msg_{item['Nombre']}_alerted"
@@ -309,5 +350,4 @@ else:
                                  enviar_telegram(f"⚠️ *ALERTA*: {item['Nombre']} se mueve un {item['Var']:.2f}%")
                                  st.session_state[clave_sesion] = True
             
-    # --- RECARGA AUTOMÁTICA (SIMPLE) ---
     st.caption("Los datos se actualizarán al presionar el botón '🔄 Refrescar Datos'.")
