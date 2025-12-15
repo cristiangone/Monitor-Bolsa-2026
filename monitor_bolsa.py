@@ -5,7 +5,6 @@ import time
 from datetime import datetime
 from plotly.subplots import make_subplots 
 import plotly.graph_objects as go
-import yfinance as yf # <-- Reintroducimos YFinance para data Chilena
 
 # --- CONFIGURACIÓN DE LA PÁGINA WEB ---
 st.set_page_config(
@@ -80,25 +79,28 @@ st.markdown(f"""
 
 
 # --- CONFIGURACIÓN DE ACTIVOS (HÍBRIDO) ---
+# --- CONFIGURACIÓN DE ACTIVOS (VERSIÓN SÓLO GLOBALES ESTABLES) ---
 UMBRAL_ALERTA = 2.5 
 
 TICKER_CATEGORIES = {
-    # Estos tickers USAN YF (.SN) - Es la única forma de tener data Chilena
-    "BOLSA DE SANTIAGO 🇨🇱": {
-        "SQM-B (Litio)": "SQM-B.SN", 
-        "Copec": "COPEC.SN",
-        "Banco de Chile": "CHILE.SN", 
-        "Falabella": "FALABELLA.SN", 
-        "Cencosud": "CENCOSUD.SN",
-        "LATAM": "LTM.SN", 
-    },
-    # Estos tickers USAN AV (Estabilidad y baja tasa de error)
-    "ACCIONES GLOBALES 🌐 (AV)": {
+    # 8 tickers globales que tienen la tasa de éxito más alta en AV
+    "ACCIONES GIGANTES 🚀": {
         "Apple (AAPL)": "AAPL",
         "Microsoft (MSFT)": "MSFT",
+        "Amazon (AMZN)": "AMZN",
         "Google (GOOGL)": "GOOGL",
-        "Tesla (TSLA)": "TSLA",
     },
+    "SECTORES ESTABLES 🛡️": {
+        "Coca Cola (KO)": "KO",
+        "Walmart (WMT)": "WMT",
+        "Johnson & Johnson (JNJ)": "JNJ",
+        "Visa (V)": "V",
+    },
+}
+
+TICKERS_PLANO = {nombre: symbol for cat in TICKER_CATEGORIES.values() for nombre, symbol in cat.items()}
+
+# ... (El resto del código de la lógica de Alpha Vantage y time.sleep(13) se mantiene) ...
 }
 
 # Separar tickers por fuente de datos
@@ -478,3 +480,4 @@ else:
             
     # --- RECARGA AUTOMÁTICA (SIMPLE) ---
     st.caption("Los datos se actualizarán al presionar el botón '🔄 Refrescar Datos'.")
+
