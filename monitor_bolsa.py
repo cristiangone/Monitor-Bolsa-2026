@@ -3,6 +3,7 @@ import pandas as pd
 import requests
 import time
 from datetime import datetime
+from plotly.subplots import make_subplots # Necesario para múltiples gráficos
 import plotly.graph_objects as go
 from alpha_vantage.timeseries import TimeSeries # Importamos la librería AV
 
@@ -24,8 +25,7 @@ except KeyError:
 TS = TimeSeries(key=ALPHA_VANTAGE_API_KEY, output_format='pandas')
 
 
-# --- DEFINICIÓN DE PALETAS DE COLOR (Se mantiene igual) ---
-# ... (PALETTES, theme, CURRENT_THEME, y asignación de COLOR_... se mantienen) ...
+# --- DEFINICIÓN DE PALETAS DE COLOR ---
 
 PALETTES = {
     "Dark": {
@@ -61,13 +61,12 @@ COLOR_NEGATIVE = CURRENT_THEME["NEGATIVE"]
 COLOR_ACCENT = CURRENT_THEME["ACCENT"]
 
 
-# --- ESTILOS CSS (Se mantienen igual) ---
+# --- ESTILOS CSS ---
 st.markdown(f"""
 <style>
     .stApp {{ background-color: {COLOR_BACKGROUND}; color: {COLOR_TEXT_NEUTRAL}; }}
     h1, h2, h3, h4, p, label {{ color: {COLOR_TEXT_NEUTRAL} !important; }}
     
-    /* ... (resto del CSS) ... */
     div[data-testid="metric-container"] {{
         background-color: {COLOR_CARD_BG}; border: 1px solid {COLOR_BORDER};
         padding: 20px; border-radius: 16px; box-shadow: 0 6px 12px rgba(0,0,0,0.4);
@@ -89,9 +88,7 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
-# --- CONFIGURACIÓN DE ACTIVOS (Ajustamos Tickers) ---
-# Nota: Alpha Vantage utiliza tickers estándar. Las divisas son robustas.
-# Los tickers Chilenos (.SN) pueden requerir el sufijo de Alpha Vantage, pero probaremos con el ticker base.
+# --- CONFIGURACIÓN DE ACTIVOS (LIMITADO PARA PRUEBA DE TASA DE LLAMADAS) ---
 UMBRAL_ALERTA = 2.5 
 
 TICKER_CATEGORIES = {
@@ -104,8 +101,37 @@ TICKER_CATEGORIES = {
 TICKERS_PLANO = {nombre: symbol for cat in TICKER_CATEGORIES.values() for nombre, symbol in cat.items()}
 
 
-# --- FUNCIONES ---
-# (enviar_telegram se mantiene igual)
+# --- FUNCIONES DE ANÁLISIS TÉCNICO ---
+def calcular_bollinger_bands(df, window=20, num_std=2):
+    """Calcula el Promedio Móvil Simple (SMA) y las Bandas de Bollinger."""
+    df['SMA'] = df['close'].rolling(window=window).mean()
+    df['STD'] = df['close'].rolling(window=window).std()
+    df['Upper'] = df['SMA'] + (df['STD'] * num_std)
+    df['Lower'] = df['SMA'] - (df['STD'] * num_std)
+    return df.dropna()
+
+def calcular_rsi(df, window=14):
+    """Calcula el Índice de Fuerza Relativa (RSI)."""
+    delta = df['close'].diff()
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+    avg_gain = gain.ewm(com=window - 1, min_periods=window).mean()
+    avg_loss = loss.ewm(com=window - 1, min_periods=window).mean()
+    rs = avg_gain / avg_loss
+    df['RSI'] = 100 - (100 / (1 + rs))
+    return df
+
+def calcular_macd(df, fast_period=12, slow_period=26, signal_period=9):
+    """Calcula el MACD, Línea de Señal y Histograma."""
+    df['EMA_Fast'] = df['close'].ewm(span=fast_period, adjust=False).mean()
+    df['EMA_Slow'] = df['close'].ewm(span=slow_period, adjust=False).mean()
+    df['MACD'] = df['EMA_Fast'] - df['EMA_Slow']
+    df['Signal_Line'] = df['MACD'].ewm(span=signal_period, adjust=False).mean()
+    df['MACD_Hist'] = df['MACD'] - df['Signal_Line']
+    return df
+
+
+# --- FUNCIÓN DE ALERTA ---
 def enviar_telegram(mensaje):
     try:
         TELEGRAM_TOKEN = st.secrets.get("TELEGRAM_TOKEN")
@@ -124,33 +150,14 @@ def enviar_telegram(mensaje):
 
 
 @st.cache_data(ttl=60)
-# --- NUEVA FUNCIÓN DE ANÁLISIS TÉCNICO ---
-def calcular_bollinger_bands(df, window=20, num_std=2):
-    """Calcula el Promedio Móvil Simple (SMA) y las Bandas de Bollinger."""
-    # Promedio Móvil Simple (SMA)
-    df['SMA'] = df['close'].rolling(window=window).mean()
-    
-    # Desviación Estándar (Std Dev)
-    df['STD'] = df['close'].rolling(window=window).std()
-    
-    # Bandas de Bollinger
-    df['Upper'] = df['SMA'] + (df['STD'] * num_std)
-    df['Lower'] = df['SMA'] - (df['STD'] * num_std)
-    
-    return df.dropna()
-
 def obtener_datos():
     """Descarga datos de mercado usando Alpha Vantage."""
     data_display = []
     tickers_fallidos = []
     
     for nombre, symbol in TICKERS_PLANO.items():
-        try:
-            # Alpha Vantage (Time Series: Daily Adjusted)
-            # data_av, meta_data = TS.get_daily_adjusted(symbol=symbol, outputsize='full')
-            # Usaremos una llamada directa a requests si la librería AV falla con símbolos chilenos
-
-            # 1. LLAMADA DIRECTA A LA API (más robusta para evitar errores de librerías)
+        try: # <--- INICIO DEL BLOQUE TRY
+            # 1. LLAMADA DIRECTA A LA API
             base_url = "https://www.alphavantage.co/query"
             params = {
                 "function": "TIME_SERIES_DAILY_ADJUSTED",
@@ -161,99 +168,122 @@ def obtener_datos():
             response = requests.get(base_url, params=params)
             data_raw = response.json()
 
-            except Exception as e:
-            # st.error(f"Error AV en {nombre}: {e}") # Descomentar para debug
-            tickers_fallidos.append(nombre)
-            continue
-            
-           # --- SOLUCIÓN PARA EL LÍMITE DE LLAMADAS DE ALPHA VANTAGE ---
-           # Espera 1 segundo entre llamadas para no exceder el límite de 5 llamadas/min.
-           time.sleep(1) 
-    
-          
             # 2. VALIDACIÓN Y PARSING
             if "Time Series (Daily)" not in data_raw:
                 tickers_fallidos.append(nombre)
-                continue
+                # Si falla, el bloque 'except' de abajo capturará el error si es grave
+            else:
+                # Crear DataFrame con los datos
+                df_hist_individual = pd.DataFrame.from_dict(data_raw["Time Series (Daily)"], orient='index')
+                df_hist_individual = df_hist_individual.rename(columns=lambda x: x.split('. ')[1])
+                df_hist_individual.index = pd.to_datetime(df_hist_individual.index)
+                
+                # Asegurar que las columnas sean numéricas
+                cols_to_convert = ['open', 'high', 'low', 'close', 'volume', 'adjusted close']
+                for col in cols_to_convert:
+                    df_hist_individual[col] = pd.to_numeric(df_hist_individual[col], errors='coerce')
 
-            # Crear DataFrame con los datos
-            df_hist_individual = pd.DataFrame.from_dict(data_raw["Time Series (Daily)"], orient='index')
-            df_hist_individual = df_hist_individual.rename(columns=lambda x: x.split('. ')[1])
-            df_hist_individual.index = pd.to_datetime(df_hist_individual.index)
-            
-            # Asegurar que las columnas sean numéricas
-            cols_to_convert = ['open', 'high', 'low', 'close', 'volume', 'adjusted close']
-            for col in cols_to_convert:
-                df_hist_individual[col] = pd.to_numeric(df_hist_individual[col], errors='coerce')
+                # Invertir el orden para que sea del más antiguo al más nuevo
+                df_hist_individual = df_hist_individual.sort_index()
 
-            # Invertir el orden (AV devuelve del más nuevo al más viejo)
-            df_hist_individual = df_hist_individual.sort_index().tail(20)
+                if df_hist_individual.empty:
+                    tickers_fallidos.append(nombre)
+                else:
+                    # 3. APLICAR CÁLCULOS DE ANÁLISIS TÉCNICO
+                    df_hist_individual = calcular_bollinger_bands(df_hist_individual)
+                    df_hist_individual = calcular_rsi(df_hist_individual) 
+                    df_hist_individual = calcular_macd(df_hist_individual) 
+                    
+                    # Nos aseguramos de tener solo 20 días para el gráfico final
+                    data_velas = df_hist_individual.tail(20).copy()
 
-            if df_hist_individual.empty:
-                tickers_fallidos.append(nombre)
-                continue
-            # Dentro de 'obtener_datos()' (reemplazar la sección después del parsing)
+                    if data_velas.empty:
+                         tickers_fallidos.append(nombre)
+                    else:
+                        # 4. EXTRACCIÓN DE DATOS DIARIOS (ÚLTIMO DÍA DISPONIBLE)
+                        df_hoy = data_velas.iloc[-1].copy()
+                        
+                        precio = df_hoy['close']
+                        apertura = df_hoy['open']
+                        volumen = df_hoy['volume']
 
-            # ... (sección de parsing de datos de AV se mantiene igual) ...
-            
-            # Invertir el orden y filtrar para tener suficientes datos para el cálculo BB
-            df_hist_individual = df_hist_individual.sort_index()
-            
-            if df_hist_individual.empty:
-                tickers_fallidos.append(nombre)
-                continue
+                        # CÁLCULO DE VARIACIÓN (usando Close de ayer vs. Close de hoy)
+                        var_pct = 0.0
+                        if len(data_velas) >= 2:
+                            close_ayer = data_velas.iloc[-2]['close']
+                            if close_ayer != 0:
+                                var_pct = ((precio - close_ayer) / close_ayer) * 100
+                            
+                        es_alerta = abs(var_pct) >= UMBRAL_ALERTA
+                        
+                        # 5. CREACIÓN DE FIGURA PLOTLY (3 SUBPLOTS: VELAS/BB, RSI, MACD)
+                        fig = make_subplots(
+                            rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03,
+                            row_heights=[0.5, 0.25, 0.25]
+                        )
+                        
+                        # --- Subplot 1: GRÁFICO DE VELAS y BB ---
+                        fig.add_trace(go.Candlestick(
+                            x=data_velas.index, open=data_velas['open'], high=data_velas['high'],
+                            low=data_velas['low'], close=data_velas['close'],
+                            increasing_line_color=COLOR_POSITIVE, decreasing_line_color=COLOR_NEGATIVE,
+                            name='Velas'
+                        ), row=1, col=1)
 
-            # 3. APLICAR CÁLCULO DE BANDAS DE BOLLINGER
-            df_hist_individual = calcular_bollinger_bands(df_hist_individual)
-            
-            # Nos aseguramos de tener al menos 20 días con BB calculadas para el gráfico
-            data_velas = df_hist_individual.tail(20).copy()
+                        # Bandas de Bollinger (SMA, Upper, Lower)
+                        fig.add_trace(go.Scatter(x=data_velas.index, y=data_velas['Upper'], line=dict(color='rgba(255, 165, 0, 0.8)', width=1), name='Banda Superior'), row=1, col=1)
+                        fig.add_trace(go.Scatter(x=data_velas.index, y=data_velas['SMA'], line=dict(color=COLOR_ACCENT, width=1.5), name='SMA 20'), row=1, col=1)
+                        fig.add_trace(go.Scatter(x=data_velas.index, y=data_velas['Lower'], line=dict(color='rgba(255, 165, 0, 0.8)', width=1), name='Banda Inferior'), row=1, col=1)
+                        
+                        # --- Subplot 2: RSI ---
+                        fig.add_trace(go.Scatter(x=data_velas.index, y=data_velas['RSI'], line=dict(color=COLOR_POSITIVE, width=1.5), name='RSI'), row=2, col=1)
+                        fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1, opacity=0.5)
+                        fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1, opacity=0.5)
 
-            if data_velas.empty:
-                 tickers_fallidos.append(nombre)
-                 continue
+                        # --- Subplot 3: MACD ---
+                        fig.add_trace(go.Bar(
+                            x=data_velas.index, y=data_velas['MACD_Hist'], 
+                            marker_color=data_velas['MACD_Hist'].apply(lambda x: COLOR_POSITIVE if x > 0 else COLOR_NEGATIVE), 
+                            name='MACD Hist'
+                        ), row=3, col=1)
+                        fig.add_trace(go.Scatter(x=data_velas.index, y=data_velas['MACD'], line=dict(color=COLOR_ACCENT, width=1.5), name='MACD'), row=3, col=1)
+                        fig.add_trace(go.Scatter(x=data_velas.index, y=data_velas['Signal_Line'], line=dict(color='orange', width=1), name='Señal'), row=3, col=1)
 
-            # 4. EXTRACCIÓN DE DATOS DIARIOS (ÚLTIMO DÍA DISPONIBLE)
-            df_hoy = data_velas.iloc[-1].copy()
-            
-            precio = df_hoy['close']
-            apertura = df_hoy['open']
-            volumen = df_hoy['volume']
-            
-            # ... (el resto del cálculo de Var y Alerta se mantiene igual) ...
+                        # --- Configuración General de la Figura ---
+                        fig.update_layout(
+                            height=450, margin=dict(l=10, r=10, t=20, b=20),
+                            paper_bgcolor=COLOR_CARD_BG, plot_bgcolor=COLOR_CARD_BG,
+                            showlegend=False, xaxis_rangeslider_visible=False,
+                            font=dict(color=COLOR_TEXT_NEUTRAL)
+                        )
 
-            # 5. CREACIÓN DE FIGURA PLOTLY (AÑADIMOS LAS LÍNEAS BB)
-            fig = go.Figure(data=[
-                # Serie de Velas (Candlestick)
-                go.Candlestick(
-                    x=data_velas.index,
-                    open=data_velas['open'],
-                    high=data_velas['high'],
-                    low=data_velas['low'],
-                    close=data_velas['close'],
-                    increasing_line_color=COLOR_POSITIVE, 
-                    decreasing_line_color=COLOR_NEGATIVE,
-                    name='Velas'
-                ),
-                # Banda Superior (Upper Band)
-                go.Scatter(x=data_velas.index, y=data_velas['Upper'], line=dict(color='rgba(255, 165, 0, 0.8)', width=1), name='Banda Superior'),
-                # Banda Central (SMA)
-                go.Scatter(x=data_velas.index, y=data_velas['SMA'], line=dict(color=COLOR_ACCENT, width=1.5), name='SMA 20'),
-                # Banda Inferior (Lower Band)
-                go.Scatter(x=data_velas.index, y=data_velas['Lower'], line=dict(color='rgba(255, 165, 0, 0.8)', width=1), name='Banda Inferior')
-            ])
-
-            fig.update_layout(
-                # ... (el resto de update_layout se mantiene igual) ...
-                showlegend=False # Ocultar leyenda para limpiar el gráfico
-            )
-            
-            # ... (el resto de data_display.append y el bloque try/except se mantiene) ...
-           
-        except Exception as e:
+                        # Configuración de Ejes
+                        fig.update_yaxes(title_text="Precio / BB", row=1, col=1, showgrid=False)
+                        fig.update_yaxes(title_text="RSI", range=[0, 100], row=2, col=1, showgrid=True, gridcolor=COLOR_BORDER)
+                        fig.update_yaxes(title_text="MACD", row=3, col=1, showgrid=True, gridcolor=COLOR_BORDER)
+                        fig.update_xaxes(row=1, col=1, showgrid=False)
+                        fig.update_xaxes(row=2, col=1, showgrid=False)
+                        fig.update_xaxes(row=3, col=1, showgrid=False)
+                        
+                        data_display.append({
+                            "Nombre": nombre, 
+                            "Symbol": symbol,
+                            "Precio": precio, 
+                            "Var": var_pct, 
+                            "Alerta": es_alerta,
+                            "Figura_Plotly": fig,
+                            "Volumen": volumen
+                        })
+                        
+        except Exception as e: # <--- FINAL DEL BLOQUE EXCEPT
+            # Si el error es una llamada de API o un parsing fallido
             # st.error(f"Error AV en {nombre}: {e}") # Descomentar para debug
             tickers_fallidos.append(nombre)
-            continue
+            continue # Saltamos al siguiente ticker
+
+        # --- SOLUCIÓN PARA EL LÍMITE DE LLAMADAS DE ALPHA VANTAGE ---
+        # Pausa 1.1 segundos para asegurar no exceder el límite de 5 llamadas/minuto.
+        time.sleep(1.1) 
     
     # Manejo de fallos (Si no hay datos, mostramos el error de conexión)
     if not data_display:
@@ -294,7 +324,7 @@ with st.sidebar:
     st.divider()
     
 st.title("📈 Monitor Bolsa de Santiago")
-st.caption("Gráfico de Velas de 20 días | Fuente: Alpha Vantage")
+st.caption("Gráfico de Velas con BB, RSI y MACD | Fuente: Alpha Vantage")
 
 refresh_placeholder = st.empty()
 st.divider()
