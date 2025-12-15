@@ -88,18 +88,32 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
-# --- CONFIGURACIÓN DE ACTIVOS (LIMITADO PARA PRUEBA DE TASA DE LLAMADAS) ---
+# --- CONFIGURACIÓN DE ACTIVOS (RESTAURAR TODOS LOS TICKERS) ---
 UMBRAL_ALERTA = 2.5 
 
 TICKER_CATEGORIES = {
+    "MACROECONOMÍA 🌎": {
+        "USD/CLP": "USDCLP", "Cobre": "HG", "Petróleo WTI": "WTI",
+    },
+    "COMMODITIES & ENERGÍA 🔋": {
+        "SQM-B (Litio)": "SQM", "Copec": "COPEC",
+    },
+    "BANCA 🏦": {
+        "Banco de Chile": "CHILE", "Banco Bci": "BCI",
+    },
+    "RETAIL & MALLS 🛍️": {
+        "Falabella": "FALABELLA", "Cencosud": "CENCOSUD",
+        "Ripley": "RIPLEY", "Parque Arauco": "PARAUCO",
+    },
+    "OTROS SECTORES 🚀": {
+        "LATAM": "LTM", "Sonda (Tech)": "SONDA", "Socovesa": "SOCOVESA"
+    },
     "PRUEBA (Global) 🌐": {
         "Apple (AAPL)": "AAPL",
         "Amazon (AMZN)": "AMZN",
     }
 }
-
 TICKERS_PLANO = {nombre: symbol for cat in TICKER_CATEGORIES.values() for nombre, symbol in cat.items()}
-
 
 # --- FUNCIONES DE ANÁLISIS TÉCNICO ---
 def calcular_bollinger_bands(df, window=20, num_std=2):
@@ -408,3 +422,4 @@ else:
             
     # --- RECARGA AUTOMÁTICA (SIMPLE) ---
     st.caption("Los datos se actualizarán al presionar el botón '🔄 Refrescar Datos'.")
+
