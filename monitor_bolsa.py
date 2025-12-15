@@ -5,26 +5,22 @@ import time
 from datetime import datetime
 from plotly.subplots import make_subplots 
 import plotly.graph_objects as go
-from alpha_vantage.timeseries import TimeSeries 
 
 # --- CONFIGURACIÓN DE LA PÁGINA WEB ---
 st.set_page_config(
-    page_title="Monitor Bolsa Chile | Dashboard Avanzado",
+    page_title="Monitor Bolsa Chile | FMP Edition",
     page_icon="📈",
     layout="wide"
 )
 
-# --- CONFIGURACIÓN DE CREDENCIALES ALPHA VANTAGE ---
+# --- CONFIGURACIÓN DE CREDENCIALES FMP ---
 try:
-    ALPHA_VANTAGE_API_KEY = st.secrets["ALPHA_VANTAGE_API_KEY"]
+    # Usaremos FMP_API_KEY en lugar de ALPHA_VANTAGE_API_KEY
+    FMP_API_KEY = st.secrets["FMP_API_KEY"]
 except KeyError:
-    st.error("🛑 ERROR: Clave ALPHA_VANTAGE_API_KEY no encontrada. Por favor, añádela al editor de Secrets en Streamlit Cloud.")
-    ALPHA_VANTAGE_API_KEY = "DEMO"
+    st.error("🛑 ERROR: Clave FMP_API_KEY no encontrada. Por favor, añádela al editor de Secrets en Streamlit Cloud.")
+    FMP_API_KEY = "DEMO"
     
-# Inicializar cliente Alpha Vantage
-TS = TimeSeries(key=ALPHA_VANTAGE_API_KEY, output_format='pandas')
-
-
 # --- DEFINICIÓN DE PALETAS DE COLOR (Modo Oscuro/Claro) ---
 PALETTES = {
     "Dark": {
@@ -52,7 +48,7 @@ COLOR_NEGATIVE = CURRENT_THEME["NEGATIVE"]
 COLOR_ACCENT = CURRENT_THEME["ACCENT"]
 
 
-# --- ESTILOS CSS ---
+# --- ESTILOS CSS (Se mantienen igual) ---
 st.markdown(f"""
 <style>
     .stApp {{ background-color: {COLOR_BACKGROUND}; color: {COLOR_TEXT_NEUTRAL}; }}
@@ -79,25 +75,33 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
-# --- CONFIGURACIÓN DE ACTIVOS (LISTA COMPLETA DE TICKERS) ---
+# --- CONFIGURACIÓN DE ACTIVOS (Tickers a probar con FMP) ---
 UMBRAL_ALERTA = 2.5 
 
 TICKER_CATEGORIES = {
     "MACROECONOMÍA 🌎": {
-        "USD/CLP": "USDCLP", "Cobre": "HG", "Petróleo WTI": "WTI",
+        "USD/CLP": "USDCLP", # FMP usa pares de divisas directos
+        "Cobre": "HG", 
+        "Petróleo WTI": "CL",
     },
     "COMMODITIES & ENERGÍA 🔋": {
-        "SQM-B (Litio)": "SQM", "Copec": "COPEC",
+        "SQM-B (Litio)": "SQM", 
+        "Copec": "COPEC",
     },
     "BANCA 🏦": {
-        "Banco de Chile": "CHILE", "Banco Bci": "BCI",
+        "Banco de Chile": "CHILE", 
+        "Banco Bci": "BCI",
     },
     "RETAIL & MALLS 🛍️": {
-        "Falabella": "FALABELLA", "Cencosud": "CENCOSUD",
-        "Ripley": "RIPLEY", "Parque Arauco": "PARAUCO",
+        "Falabella": "FALABELLA", 
+        "Cencosud": "CENCOSUD",
+        "Ripley": "RIPLEY", 
+        "Parque Arauco": "PARAUCO",
     },
     "OTROS SECTORES 🚀": {
-        "LATAM": "LTM", "Sonda (Tech)": "SONDA", "Socovesa": "SOCOVESA"
+        "LATAM": "LTM", 
+        "Sonda (Tech)": "SONDA", 
+        "Socovesa": "SOCOVESA"
     },
     "PRUEBA (Global) 🌐": {
         "Apple (AAPL)": "AAPL",
@@ -108,7 +112,7 @@ TICKER_CATEGORIES = {
 TICKERS_PLANO = {nombre: symbol for cat in TICKER_CATEGORIES.values() for nombre, symbol in cat.items()}
 
 
-# --- FUNCIONES DE ANÁLISIS TÉCNICO ---
+# --- FUNCIONES DE ANÁLISIS TÉCNICO (Se mantienen igual) ---
 
 def calcular_bollinger_bands(df, window=20, num_std=2):
     """Calcula el Promedio Móvil Simple (SMA) y las Bandas de Bollinger."""
@@ -139,7 +143,7 @@ def calcular_macd(df, fast_period=12, slow_period=26, signal_period=9):
     return df
 
 
-# --- FUNCIÓN DE ALERTA ---
+# --- FUNCIÓN DE ALERTA (Se mantiene igual) ---
 def enviar_telegram(mensaje):
     try:
         TELEGRAM_TOKEN = st.secrets.get("TELEGRAM_TOKEN")
@@ -159,40 +163,44 @@ def enviar_telegram(mensaje):
 
 @st.cache_data(ttl=60)
 def obtener_datos():
-    """Descarga datos de mercado usando Alpha Vantage (corregido con time.sleep)."""
+    """Descarga datos de mercado usando Financial Modeling Prep (FMP)."""
     data_display = []
     tickers_fallidos = []
     
+    # Definir fechas para obtener 30 días de historial
+    end_date = datetime.now().strftime('%Y-%m-%d')
+    start_date = (datetime.now() - pd.DateOffset(days=50)).strftime('%Y-%m-%d') # 50 días para asegurar 20 días para BB/RSI
+
     for nombre, symbol in TICKERS_PLANO.items():
-        try: # <--- INICIO DEL BLOQUE TRY
-            # 1. LLAMADA DIRECTA A LA API
-            base_url = "https://www.alphavantage.co/query"
+        try: 
+            # 1. LLAMADA DIRECTA A LA API de FMP para historial de velas
+            base_url = f"https://financialmodelingprep.com/api/v3/historical-price-full/{symbol}"
             params = {
-                "function": "TIME_SERIES_DAILY_ADJUSTED",
-                "symbol": symbol,
-                "outputsize": "compact", # Últimos 100 días para cálculos
-                "apikey": ALPHA_VANTAGE_API_KEY
+                "from": start_date,
+                "to": end_date,
+                "apikey": FMP_API_KEY
             }
             response = requests.get(base_url, params=params)
             data_raw = response.json()
 
             # 2. VALIDACIÓN Y PARSING
-            if "Time Series (Daily)" not in data_raw:
-                # Si Alpha Vantage no devuelve datos, el ticker falla
+            if "historical" not in data_raw or not data_raw["historical"]:
                 tickers_fallidos.append(nombre)
             else:
                 # Crear DataFrame con los datos
-                df_hist_individual = pd.DataFrame.from_dict(data_raw["Time Series (Daily)"], orient='index')
-                df_hist_individual = df_hist_individual.rename(columns=lambda x: x.split('. ')[1])
-                df_hist_individual.index = pd.to_datetime(df_hist_individual.index)
+                df_hist_individual = pd.DataFrame(data_raw["historical"])
+                # Renombrar columnas para que coincidan con el cálculo de indicadores (Open, Close, Volume)
+                df_hist_individual = df_hist_individual.rename(columns={
+                    'date': 'Date', 'open': 'open', 'high': 'high', 
+                    'low': 'low', 'close': 'close', 'volume': 'volume'
+                })
                 
-                # Asegurar que las columnas sean numéricas
-                cols_to_convert = ['open', 'high', 'low', 'close', 'volume', 'adjusted close']
-                for col in cols_to_convert:
-                    df_hist_individual[col] = pd.to_numeric(df_hist_individual[col], errors='coerce')
+                df_hist_individual['Date'] = pd.to_datetime(df_hist_individual['Date'])
+                df_hist_individual = df_hist_individual.set_index('Date').sort_index()
 
-                # Invertir el orden y filtrar el historial
-                df_hist_individual = df_hist_individual.sort_index()
+                # Asegurar que las columnas sean numéricas
+                for col in ['open', 'high', 'low', 'close', 'volume']:
+                    df_hist_individual[col] = pd.to_numeric(df_hist_individual[col], errors='coerce')
 
                 if df_hist_individual.empty:
                     tickers_fallidos.append(nombre)
@@ -202,7 +210,6 @@ def obtener_datos():
                     df_hist_individual = calcular_rsi(df_hist_individual) 
                     df_hist_individual = calcular_macd(df_hist_individual) 
                     
-                    # Usamos 20 días para la visualización del gráfico
                     data_velas = df_hist_individual.tail(20).copy()
 
                     if data_velas.empty:
@@ -279,24 +286,22 @@ def obtener_datos():
                             "Volumen": volumen
                         })
                         
-        except Exception as e: # <--- FINAL DEL BLOQUE EXCEPT
-            # Si el error es una llamada de API o un parsing fallido
+        except Exception as e: 
             tickers_fallidos.append(nombre)
             continue 
 
-        # --- SOLUCIÓN PARA EL LÍMITE DE LLAMADAS DE ALPHA VANTAGE ---
+        # --- PAUSA DE SEGURIDAD PARA LA API GRATUITA ---
         time.sleep(1.1) 
     
-    # Manejo de fallos (Si no hay datos, mostramos el error de conexión)
+    # Manejo de fallos 
     if not data_display:
-        st.error(f"🛑 Error de Conexión Severo: Alpha Vantage falló. Revise su clave API o red.")
-        # Dato dummy para asegurar que la UI se renderice
+        st.error(f"🛑 Error de Conexión Severo: FMP falló. Revise su clave API o red.")
         data_display.append({
             "Nombre": "FALLO DE CONEXIÓN", "Symbol": "ERROR", "Precio": 0.00, 
             "Var": 0.00, "Alerta": False, "Figura_Plotly": go.Figure(), "Volumen": 0
         })
     elif tickers_fallidos:
-         st.sidebar.warning(f"⚠️ Datos faltantes (AV): {', '.join(tickers_fallidos)}")
+         st.sidebar.warning(f"⚠️ Datos faltantes (FMP): {', '.join(tickers_fallidos)}")
     
     return data_display
 
@@ -321,23 +326,20 @@ with st.sidebar:
     st.divider()
     
 st.title("📈 Monitor Bolsa de Santiago")
-st.caption("Gráfico de Velas con BB, RSI y MACD | Fuente: Alpha Vantage")
+st.caption("Gráfico de Velas con BB, RSI y MACD | Fuente: Financial Modeling Prep (FMP)")
 
 refresh_placeholder = st.empty()
 st.divider()
 
-# Placeholder para el mensaje de carga
 loading_message_placeholder = st.empty()
 
 datos_completos = obtener_datos()
 
 if not datos_completos:
-    # Mostrar mensaje de carga si no hay datos
     with loading_message_placeholder:
         st.info("⏳ Conectando con el mercado...")
-        st.caption("Esto puede tardar hasta 20 segundos debido a los límites de la API gratuita.")
+        st.caption("Esto puede tardar unos segundos, por favor sea paciente.")
 else:
-    # Limpiar el mensaje de carga y mostrar la nota de cierre de mercado
     loading_message_placeholder.empty()
     st.caption("Nota: Los datos mostrados son del último cierre disponible.")
     
