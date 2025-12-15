@@ -100,8 +100,6 @@ TICKER_CATEGORIES = {
 
 TICKERS_PLANO = {nombre: symbol for cat in TICKER_CATEGORIES.values() for nombre, symbol in cat.items()}
 
-# ... (El resto del código de la lógica de Alpha Vantage y time.sleep(13) se mantiene) ...
-}
 
 # Separar tickers por fuente de datos
 TICKERS_YF = {k: v for k, v in TICKER_CATEGORIES["BOLSA DE SANTIAGO 🇨🇱"].items()}
@@ -480,4 +478,5 @@ else:
             
     # --- RECARGA AUTOMÁTICA (SIMPLE) ---
     st.caption("Los datos se actualizarán al presionar el botón '🔄 Refrescar Datos'.")
+
 
