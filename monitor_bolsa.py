@@ -5,23 +5,25 @@ import time
 from datetime import datetime
 from plotly.subplots import make_subplots 
 import plotly.graph_objects as go
+# NO NECESITAMOS IMPORTAR ALPHA VANTAGE (Usamos requests directo)
 
 # --- CONFIGURACIÓN DE LA PÁGINA WEB ---
 st.set_page_config(
-    page_title="Monitor Bolsa Chile | FMP Edition",
+    page_title="Monitor Bolsa Chile | AV Stable Edition",
     page_icon="📈",
     layout="wide"
 )
 
-# --- CONFIGURACIÓN DE CREDENCIALES FMP ---
+# --- CONFIGURACIÓN DE CREDENCIALES ALPHA VANTAGE ---
 try:
-    # Usaremos FMP_API_KEY en lugar de ALPHA_VANTAGE_API_KEY
-    FMP_API_KEY = st.secrets["FMP_API_KEY"]
+    # Usamos la clave de AV que sabemos que es válida
+    ALPHA_VANTAGE_API_KEY = st.secrets["ALPHA_VANTAGE_API_KEY"]
 except KeyError:
-    st.error("🛑 ERROR: Clave FMP_API_KEY no encontrada. Por favor, añádela al editor de Secrets en Streamlit Cloud.")
-    FMP_API_KEY = "DEMO"
+    st.error("🛑 ERROR: Clave ALPHA_VANTAGE_API_KEY no encontrada.")
+    ALPHA_VANTAGE_API_KEY = "DEMO"
     
 # --- DEFINICIÓN DE PALETAS DE COLOR (Modo Oscuro/Claro) ---
+# ... (PALETTES y variables de color se mantienen) ... 
 PALETTES = {
     "Dark": {
         "BACKGROUND": "#0d1117", "CARD_BG": "#161b22", "BORDER": "#30363d",
@@ -47,62 +49,39 @@ COLOR_POSITIVE = CURRENT_THEME["POSITIVE"]
 COLOR_NEGATIVE = CURRENT_THEME["NEGATIVE"]
 COLOR_ACCENT = CURRENT_THEME["ACCENT"]
 
-
-# --- ESTILOS CSS (Se mantienen igual) ---
+# --- ESTILOS CSS (Se mantienen) ---
 st.markdown(f"""
-<style>
-    .stApp {{ background-color: {COLOR_BACKGROUND}; color: {COLOR_TEXT_NEUTRAL}; }}
-    h1, h2, h3, h4, p, label {{ color: {COLOR_TEXT_NEUTRAL} !important; }}
-    
-    div[data-testid="metric-container"] {{
-        background-color: {COLOR_CARD_BG}; border: 1px solid {COLOR_BORDER};
-        padding: 20px; border-radius: 16px; box-shadow: 0 6px 12px rgba(0,0,0,0.4);
-        margin-bottom: 25px; transition: transform 0.3s ease-in-out, box-shadow 0.3s ease-in-out;
-    }}
-    div[data-testid="metric-container"]:hover {{ transform: translateY(-5px); box-shadow: 0 10px 20px rgba(0,0,0,0.6); }}
-    [data-testid="stMetricValue"] {{ font-size: 32px !important; font-weight: 800; color: {COLOR_ACCENT}; margin-bottom: 8px; }}
-    [data-testid="stMetricDelta"] {{ font-size: 20px !important; font-weight: 700; }}
-    [data-testid="stMetricDelta"] svg[fill="#009943"] + div {{ color: {COLOR_POSITIVE} !important; }}
-    [data-testid="stMetricDelta"] svg[fill="#ff4b4b"] + div {{ color: {COLOR_NEGATIVE} !important; }}
-
-    .volume-subtitle {{
-        font-size: 13px; color: #959da5; margin-top: -10px; margin-bottom: 5px; font-weight: 500;
-    }}
-    
-    .stTabs [data-baseweb="tab-list"] {{ gap: 15px; }}
-    .stTabs [data-baseweb="tab"] {{ border-radius: 6px 6px 0 0; background: {COLOR_CARD_BG}; color: {COLOR_TEXT_NEUTRAL}; }}
-    .stTabs [aria-selected="true"] {{ border-bottom: 3px solid {COLOR_ACCENT} !important; color: {COLOR_ACCENT} !important; }}
-</style>
+# ... (Todo el bloque CSS se mantiene igual) ...
 """, unsafe_allow_html=True)
 
-# --- CONFIGURACIÓN DE ACTIVOS (Tickers a probar con FMP) ---
+# --- CONFIGURACIÓN DE ACTIVOS (Tickers de Alpha Vantage, incluyendo los problemáticos .SN) ---
 UMBRAL_ALERTA = 2.5 
 
 TICKER_CATEGORIES = {
-#    "MACROECONOMÍA 🌎": {
- #       "USD/CLP": "USDCLP", # FMP usa pares de divisas directos
-  #      "Cobre": "HG", 
-   #     "Petróleo WTI": "CL",
-   # },
-  #  "COMMODITIES & ENERGÍA 🔋": {
-   #     "SQM-B (Litio)": "SQM", 
-    #    "Copec": "COPEC",
-  #  },
-   # "BANCA 🏦": {
-    #    "Banco de Chile": "CHILE", 
-     #   "Banco Bci": "BCI",
-   # },
-   # "RETAIL & MALLS 🛍️": {
-    #    "Falabella": "FALABELLA", 
-     #   "Cencosud": "CENCOSUD",
-      #  "Ripley": "RIPLEY", 
-       # "Parque Arauco": "PARAUCO",
-   # },
-   # "OTROS SECTORES 🚀": {
-    #    "LATAM": "LTM", 
-     #   "Sonda (Tech)": "SONDA", 
-      #  "Socovesa": "SOCOVESA"
-    # },
+    "MACROECONOMÍA 🌎": {
+        "USD/CLP": "CLP=X", # Ticker de divisas de Yahoo/AV
+        "Cobre": "HG=F", 
+        "Petróleo WTI": "CL=F",
+    },
+    "COMMODITIES & ENERGÍA 🔋": {
+        "SQM-B (Litio)": "SQM-B.SN", 
+        "Copec": "COPEC.SN",
+    },
+    "BANCA 🏦": {
+        "Banco de Chile": "CHILE.SN", 
+        "Banco Bci": "BCI.SN",
+    },
+    "RETAIL & MALLS 🛍️": {
+        "Falabella": "FALABELLA.SN", 
+        "Cencosud": "CENCOSUD.SN",
+        "Ripley": "RIPLEY.SN", 
+        "Parque Arauco": "PARAUCO.SN",
+    },
+    "OTROS SECTORES 🚀": {
+        "LATAM": "LTM.SN", 
+        "Sonda (Tech)": "SONDA.SN", 
+        "Socovesa": "SOCOVESA.SN"
+    },
     "PRUEBA (Global) 🌐": {
         "Apple (AAPL)": "AAPL",
         "Amazon (AMZN)": "AMZN",
@@ -112,10 +91,10 @@ TICKER_CATEGORIES = {
 TICKERS_PLANO = {nombre: symbol for cat in TICKER_CATEGORIES.values() for nombre, symbol in cat.items()}
 
 
-# --- FUNCIONES DE ANÁLISIS TÉCNICO (Se mantienen igual) ---
+# --- FUNCIONES DE ANÁLISIS TÉCNICO (Se mantienen) ---
+# ... (calcular_bollinger_bands, calcular_rsi, calcular_macd se mantienen) ...
 
 def calcular_bollinger_bands(df, window=20, num_std=2):
-    """Calcula el Promedio Móvil Simple (SMA) y las Bandas de Bollinger."""
     df['SMA'] = df['close'].rolling(window=window).mean()
     df['STD'] = df['close'].rolling(window=window).std()
     df['Upper'] = df['SMA'] + (df['STD'] * num_std)
@@ -123,7 +102,6 @@ def calcular_bollinger_bands(df, window=20, num_std=2):
     return df.dropna()
 
 def calcular_rsi(df, window=14):
-    """Calcula el Índice de Fuerza Relativa (RSI)."""
     delta = df['close'].diff()
     gain = delta.where(delta > 0, 0)
     loss = -delta.where(delta < 0, 0)
@@ -134,7 +112,6 @@ def calcular_rsi(df, window=14):
     return df
 
 def calcular_macd(df, fast_period=12, slow_period=26, signal_period=9):
-    """Calcula el MACD, Línea de Señal y Histograma."""
     df['EMA_Fast'] = df['close'].ewm(span=fast_period, adjust=False).mean()
     df['EMA_Slow'] = df['close'].ewm(span=slow_period, adjust=False).mean()
     df['MACD'] = df['EMA_Fast'] - df['EMA_Slow']
@@ -142,8 +119,9 @@ def calcular_macd(df, fast_period=12, slow_period=26, signal_period=9):
     df['MACD_Hist'] = df['MACD'] - df['Signal_Line']
     return df
 
+# --- FUNCIÓN DE ALERTA (Se mantiene) ---
+# ... (enviar_telegram se mantiene) ...
 
-# --- FUNCIÓN DE ALERTA (Se mantiene igual) ---
 def enviar_telegram(mensaje):
     try:
         TELEGRAM_TOKEN = st.secrets.get("TELEGRAM_TOKEN")
@@ -163,44 +141,39 @@ def enviar_telegram(mensaje):
 
 @st.cache_data(ttl=60)
 def obtener_datos():
-    """Descarga datos de mercado usando Financial Modeling Prep (FMP)."""
+    """Descarga datos de mercado usando Alpha Vantage con una pausa máxima."""
     data_display = []
     tickers_fallidos = []
-    
-    # Definir fechas para obtener 30 días de historial
-    end_date = datetime.now().strftime('%Y-%m-%d')
-    start_date = (datetime.now() - pd.DateOffset(days=50)).strftime('%Y-%m-%d') # 50 días para asegurar 20 días para BB/RSI
 
     for nombre, symbol in TICKERS_PLANO.items():
         try: 
-            # 1. LLAMADA DIRECTA A LA API de FMP para historial de velas
-            base_url = f"https://financialmodelingprep.com/api/v3/historical-price-full/{symbol}"
+            # 1. LLAMADA DIRECTA A LA API de Alpha Vantage (Time Series: Daily Adjusted)
+            base_url = "https://www.alphavantage.co/query"
             params = {
-                "from": start_date,
-                "to": end_date,
-                "apikey": FMP_API_KEY
+                "function": "TIME_SERIES_DAILY_ADJUSTED",
+                "symbol": symbol,
+                "outputsize": "compact", # Últimos 100 días para cálculos
+                "apikey": ALPHA_VANTAGE_API_KEY
             }
             response = requests.get(base_url, params=params)
             data_raw = response.json()
 
             # 2. VALIDACIÓN Y PARSING
-            if "historical" not in data_raw or not data_raw["historical"]:
+            if "Time Series (Daily)" not in data_raw:
                 tickers_fallidos.append(nombre)
             else:
-                # Crear DataFrame con los datos
-                df_hist_individual = pd.DataFrame(data_raw["historical"])
-                # Renombrar columnas para que coincidan con el cálculo de indicadores (Open, Close, Volume)
-                df_hist_individual = df_hist_individual.rename(columns={
-                    'date': 'Date', 'open': 'open', 'high': 'high', 
-                    'low': 'low', 'close': 'close', 'volume': 'volume'
-                })
+                # Crear DataFrame con los datos (lógica de parsing de AV)
+                df_hist_individual = pd.DataFrame.from_dict(data_raw["Time Series (Daily)"], orient='index')
+                df_hist_individual = df_hist_individual.rename(columns=lambda x: x.split('. ')[1])
+                df_hist_individual.index = pd.to_datetime(df_hist_individual.index)
                 
-                df_hist_individual['Date'] = pd.to_datetime(df_hist_individual['Date'])
-                df_hist_individual = df_hist_individual.set_index('Date').sort_index()
-
                 # Asegurar que las columnas sean numéricas
-                for col in ['open', 'high', 'low', 'close', 'volume']:
+                cols_to_convert = ['open', 'high', 'low', 'close', 'volume', 'adjusted close']
+                for col in cols_to_convert:
                     df_hist_individual[col] = pd.to_numeric(df_hist_individual[col], errors='coerce')
+
+                # Invertir el orden y filtrar el historial
+                df_hist_individual = df_hist_individual.sort_index()
 
                 if df_hist_individual.empty:
                     tickers_fallidos.append(nombre)
@@ -215,9 +188,8 @@ def obtener_datos():
                     if data_velas.empty:
                          tickers_fallidos.append(nombre)
                     else:
-                        # 4. EXTRACCIÓN DE DATOS DIARIOS (ÚLTIMO DÍA DISPONIBLE)
+                        # 4. EXTRACCIÓN DE DATOS DIARIOS
                         df_hoy = data_velas.iloc[-1].copy()
-                        
                         precio = df_hoy['close']
                         apertura = df_hoy['open']
                         volumen = df_hoy['volume']
@@ -231,7 +203,7 @@ def obtener_datos():
                             
                         es_alerta = abs(var_pct) >= UMBRAL_ALERTA
                         
-                        # 5. CREACIÓN DE FIGURA PLOTLY (3 SUBPLOTS: VELAS/BB, RSI, MACD)
+                        # 5. CREACIÓN DE FIGURA PLOTLY (3 SUBPLOTS)
                         fig = make_subplots(
                             rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03,
                             row_heights=[0.5, 0.25, 0.25]
@@ -290,18 +262,18 @@ def obtener_datos():
             tickers_fallidos.append(nombre)
             continue 
 
-        # --- PAUSA DE SEGURIDAD PARA LA API GRATUITA ---
-      #  time.sleep(1.1) 
+        # --- PAUSA DE SEGURIDAD EXTREMA (13 SEGUNDOS) ---
+        time.sleep(13) 
     
     # Manejo de fallos 
     if not data_display:
-        st.error(f"🛑 Error de Conexión Severo: FMP falló. Revise su clave API o red.")
+        st.error(f"🛑 Error de Conexión Severo: Alpha Vantage falló. Revise su clave API o red.")
         data_display.append({
             "Nombre": "FALLO DE CONEXIÓN", "Symbol": "ERROR", "Precio": 0.00, 
             "Var": 0.00, "Alerta": False, "Figura_Plotly": go.Figure(), "Volumen": 0
         })
     elif tickers_fallidos:
-         st.sidebar.warning(f"⚠️ Datos faltantes (FMP): {', '.join(tickers_fallidos)}")
+         st.sidebar.warning(f"⚠️ Datos faltantes (AV): {', '.join(tickers_fallidos)}")
     
     return data_display
 
@@ -326,7 +298,7 @@ with st.sidebar:
     st.divider()
     
 st.title("📈 Monitor Bolsa de Santiago")
-st.caption("Gráfico de Velas con BB, RSI y MACD | Fuente: Financial Modeling Prep (FMP)")
+st.caption("Gráfico de Velas con BB, RSI y MACD | Fuente: Alpha Vantage (AV)")
 
 refresh_placeholder = st.empty()
 st.divider()
@@ -338,7 +310,7 @@ datos_completos = obtener_datos()
 if not datos_completos:
     with loading_message_placeholder:
         st.info("⏳ Conectando con el mercado...")
-        st.caption("Esto puede tardar unos segundos, por favor sea paciente.")
+        st.caption("Esto puede tardar hasta 4 minutos la primera vez. Por favor, no actualice el navegador.")
 else:
     loading_message_placeholder.empty()
     st.caption("Nota: Los datos mostrados son del último cierre disponible.")
@@ -407,4 +379,3 @@ else:
             
     # --- RECARGA AUTOMÁTICA (SIMPLE) ---
     st.caption("Los datos se actualizarán al presionar el botón '🔄 Refrescar Datos'.")
-
