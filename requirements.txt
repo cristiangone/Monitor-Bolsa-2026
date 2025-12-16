@@ -3,6 +3,8 @@ streamlit
 pandas
 requests
 plotly
+yfinance
+
 
 
 
