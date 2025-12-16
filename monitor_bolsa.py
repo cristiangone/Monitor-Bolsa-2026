@@ -3,19 +3,18 @@ import pandas as pd
 import requests
 import time
 from datetime import datetime, timedelta
-# Importamos la librería para gestionar fechas/tiempo
 import pytz 
 from plotly.subplots import make_subplots 
 import plotly.graph_objects as go
 
 # --- CONFIGURACIÓN DE LA PÁGINA WEB ---
 st.set_page_config(
-    page_title="Monitor Bolsa Chile | Finnhub Design",
+    page_title="Monitor Bolsa Chile | Finnhub DIAGNÓSTICO",
     page_icon="📈",
     layout="wide"
 )
 
-# --- DEFINICIÓN DE PALETAS DE COLOR ---
+# --- PALETAS DE COLOR (SE MANTIENE TU EXCELENTE DISEÑO) ---
 PALETTES = {
     "Dark": {
         "BACKGROUND": "#0d1117", "CARD_BG": "#161b22", "BORDER": "#30363d",
@@ -41,7 +40,7 @@ COLOR_POSITIVE = CURRENT_THEME["POSITIVE"]
 COLOR_NEGATIVE = CURRENT_THEME["NEGATIVE"]
 COLOR_ACCENT = CURRENT_THEME["ACCENT"]
 
-# --- ESTILOS CSS (Sin cambios, se mantienen tus mejoras) ---
+# --- ESTILOS CSS (Sin cambios) ---
 st.markdown(f"""
 <style>
     .stApp {{ background-color: {COLOR_BACKGROUND}; color: {COLOR_TEXT_NEUTRAL}; }}
@@ -92,33 +91,32 @@ st.markdown(f"""
 
 # --- GESTIÓN DE CREDENCIALES (FINNHUB y TELEGRAM) ---
 try:
-    # **IMPORTANTE**: Reemplaza 'FINNHUB_TOKEN' con el nombre de la clave en tus secrets.toml
     FINNHUB_TOKEN = st.secrets["FINNHUB_TOKEN"] 
     TELEGRAM_TOKEN = st.secrets["TELEGRAM_TOKEN"]
     TELEGRAM_CHAT_ID = st.secrets["TELEGRAM_CHAT_ID"]
 except:
-    FINNHUB_TOKEN = "DEMO_TOKEN" # Finnhub permite algunas llamadas con un token demo
+    FINNHUB_TOKEN = "DEMO_TOKEN" 
     TELEGRAM_TOKEN = "" 
     TELEGRAM_CHAT_ID = ""
 
 
-# --- CONFIGURACIÓN DE ACTIVOS (Ajustado a Tickers de Finnhub/Bolsa de Santiago) ---
-
+# --- CONFIGURACIÓN DE ACTIVOS (MODO PRUEBA) ---
 UMBRAL_ALERTA = 2.5 
 
 TICKER_CATEGORIES = {
-    # ATENCIÓN: Tickers chilenos temporalmente deshabilitados para confirmar la conexión.
+    # Usamos tickers universales para confirmar la conexión de la API (no de la bolsa chilena)
     "PRUEBA Y CONEXIÓN ✅": {
-        "Apple Inc. (NASDAQ)": "AAPL", # Ticker universal
-        "Microsoft (NASDAQ)": "MSFT", # Ticker universal
-        "USD/CLP (Forex)": "USDCLP",   # Ticker de Forex sin el '=X' de Yahoo
+        "Apple Inc. (NASDAQ)": "AAPL", 
+        "Microsoft (NASDAQ)": "MSFT", 
+        "USD/CLP (Forex)": "USDCLP",   
     },
-
 }
 
 TICKERS_PLANO = {nombre: symbol for cat in TICKER_CATEGORIES.values() for nombre, symbol in cat.items()}
 
+
 # --- FUNCIONES DE ANÁLISIS TÉCNICO (Sin cambios) ---
+# ... (calcular_bollinger_bands, calcular_rsi, calcular_macd, enviar_telegram se mantienen iguales)
 def calcular_bollinger_bands(df, window=20, num_std=2):
     df['SMA'] = df['close'].rolling(window=window).mean()
     df['STD'] = df['close'].rolling(window=window).std()
@@ -145,7 +143,6 @@ def calcular_macd(df, fast_period=12, slow_period=26, signal_period=9):
     return df
 
 def enviar_telegram(mensaje):
-    # ... (Sin cambios) ...
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID: return
     
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -155,69 +152,71 @@ def enviar_telegram(mensaje):
     except:
         pass
 
-# --- FUNCIÓN CLAVE: OBTENER DATOS HISTÓRICOS DE FINNHUB (API REST) ---
-@st.cache_data(ttl=3600) # El histórico diario no necesita actualizarse tan a menudo
+
+# --- FUNCIÓN CLAVE: OBTENER DATOS HISTÓRICOS DE FINNHUB (API REST) - CON DIAGNÓSTICO ---
+@st.cache_data(ttl=3600) 
 def obtener_datos_historicos_finnhub(symbol, days=50):
-    """Obtiene datos de velas (OHLCV) de Finnhub para un símbolo dado."""
     
-    # 1. Definir los timestamps
-    # Usamos la zona horaria de Santiago (o la local de la bolsa)
     zona_horaria = pytz.timezone('America/Santiago') 
     hoy = datetime.now(zona_horaria)
-    
-    # Restamos los días para el inicio (hace 50 días)
-    inicio = hoy - timedelta(days=days + 10) # Damos un margen
-    
-    # Convertir a timestamp UNIX (segundos)
+    inicio = hoy - timedelta(days=days + 10) 
     t_fin = int(hoy.timestamp())
     t_inicio = int(inicio.timestamp())
     
-    # 2. Construir la URL de la API de Velas (Candles)
     url = f"https://finnhub.io/api/v1/stock/candle?symbol={symbol}&resolution=D&from={t_inicio}&to={t_fin}&token={FINNHUB_TOKEN}"
     
     try:
         response = requests.get(url, timeout=10)
-        response.raise_for_status() # Lanza error para códigos 4xx/5xx
+        
+        # **** DIAGNÓSTICO HTTP PARA LA API CANDLE ****
+        if response.status_code == 401:
+            st.error(f"🔴 ERROR 401: Token Inválido o Permisos Insuficientes para {symbol}. Revisa tu clave Finnhub.")
+            return pd.DataFrame()
+        if response.status_code == 429:
+            st.error(f"🔴 ERROR 429: Límite de Llamadas Excedido para {symbol}. Tu plan gratuito está agotado. Espera o actualiza.")
+            return pd.DataFrame()
+        if response.status_code != 200:
+             st.error(f"🔴 ERROR HTTP ({symbol}): Código {response.status_code}. Respuesta: {response.text[:100]}...")
+             return pd.DataFrame()
+        # *********************************************
+
         data = response.json()
         
-        # 3. Procesar la respuesta de Finnhub (Formato especial: o, h, l, c, v, t)
-        if data['s'] != 'ok':
-            # Finnhub devuelve 'no_data' si no hay datos
+        # 3. Procesar la respuesta de Finnhub (s: 'no_data' o s: 'ok')
+        if data.get('s') != 'ok':
+            # Muestra el mensaje exacto de Finnhub si no es 'ok' (ej: 'no_data')
+            st.warning(f"🟡 ADVERTENCIA ({symbol}): Finnhub devolvió '{data.get('s', 'Status Desconocido')}'. Ticker incorrecto, fuera de horas de mercado, o datos no disponibles.")
             return pd.DataFrame() 
 
         df = pd.DataFrame({
-            'open': data['o'],
-            'high': data['h'],
-            'low': data['l'],
-            'close': data['c'],
-            'volume': data['v'],
-            # Convertir timestamp UNIX (segundos) a datetime
+            'open': data['o'], 'high': data['h'], 'low': data['l'], 'close': data['c'], 'volume': data['v'],
             'Date': [datetime.fromtimestamp(t, tz=zona_horaria) for t in data['t']]
         })
         
         df = df.set_index('Date').sort_index()
-        
-        # Filtramos para tener solo los 50 días requeridos
         return df.tail(days).copy()
         
     except requests.exceptions.RequestException as e:
-        # st.error(f"Error al obtener datos históricos de Finnhub para {symbol}: {e}")
+        st.error(f"❌ FALLA DE RED ({symbol}): No se pudo conectar a la URL. {e}")
         return pd.DataFrame()
 
 
-# --- FUNCIÓN CLAVE: OBTENER PRECIO ACTUAL DE FINNHUB (API REST) ---
-@st.cache_data(ttl=60) # Carga el precio cada 60 segundos
+# --- FUNCIÓN CLAVE: OBTENER PRECIO ACTUAL DE FINNHUB (API REST) - CON DIAGNÓSTICO ---
+@st.cache_data(ttl=60) 
 def obtener_precio_actual_finnhub(symbol):
-    """Obtiene el precio actual y la variación diaria de Finnhub (Quote)."""
+    
     url = f"https://finnhub.io/api/v1/quote?symbol={symbol}&token={FINNHUB_TOKEN}"
     
     try:
         response = requests.get(url, timeout=5)
-        response.raise_for_status()
-        data = response.json()
         
-        # Datos clave de Finnhub Quote:
-        # c: precio actual, pc: precio de cierre anterior
+        # **** DIAGNÓSTICO HTTP PARA LA API QUOTE ****
+        if response.status_code != 200:
+            st.error(f"🔴 ERROR Quote ({symbol}): Código {response.status_code}. No se pudo obtener el precio actual.")
+            return None
+        # *********************************************
+        
+        data = response.json()
         
         if data.get('c') is not None and data.get('pc') is not None:
             precio_actual = data['c']
@@ -231,7 +230,7 @@ def obtener_precio_actual_finnhub(symbol):
             return {
                 "Precio": precio_actual, 
                 "Var": var_pct, 
-                "Volumen": data.get('v', 0) # Volumen del día, puede ser cero
+                "Volumen": data.get('v', 0)
             }
         
     except requests.exceptions.RequestException:
@@ -240,18 +239,21 @@ def obtener_precio_actual_finnhub(symbol):
     return None
 
 
-@st.cache_data(ttl=60) # Mantener ttl de 60s para refresco
+@st.cache_data(ttl=60) 
 def obtener_datos():
     """Combina datos históricos y actuales de Finnhub para el dashboard."""
     data_display = []
     
+    # 🚨 TEMPORAL: Muestra si el token es DEMO.
+    if FINNHUB_TOKEN == "DEMO_TOKEN":
+        st.warning("⚠️ Usando token DEMO: Es probable que la API de velas falle por límite estricto.")
+
     for nombre, symbol in TICKERS_PLANO.items():
         try:
             # 1. OBTENER DATOS HISTÓRICOS (Para Gráfico y AT)
             df_hist = obtener_datos_historicos_finnhub(symbol)
             
             if df_hist.empty or len(df_hist) < 30:
-                # Si no hay suficiente histórico para los cálculos, lo omitimos
                 continue 
 
             # 2. OBTENER DATOS ACTUALES (Precio, Var, Vol)
@@ -264,33 +266,29 @@ def obtener_datos():
             var_pct = data_actual['Var']
             es_alerta = abs(var_pct) >= UMBRAL_ALERTA
             
-            # --- CÁLCULOS DE ANÁLISIS TÉCNICO ---
+            # --- CÁLCULOS DE ANÁLISIS TÉCNICO (Sin cambios) ---
             df_hist = calcular_bollinger_bands(df_hist)
             df_hist = calcular_rsi(df_hist) 
             df_hist = calcular_macd(df_hist) 
             
-            # Nos aseguramos de tener 20 días para el gráfico
-            # NOTA: El último punto del histórico (cierre de ayer) puede ser diferente 
-            # al precio actual obtenido por 'quote', lo cual es correcto.
             data_velas = df_hist.dropna().tail(20).copy()
             
             if data_velas.empty:
                 continue
 
-            # Extracción de indicadores para la tarjeta (hoy es el último día del histórico)
             df_hoy = data_velas.iloc[-1].copy()
             
             rsi_hoy = df_hoy['RSI'] if 'RSI' in df_hoy else None
             macd_hist_hoy = df_hoy['MACD_Hist'] if 'MACD_Hist' in df_hoy else None
             macd_hist_ayer = data_velas.iloc[-2]['MACD_Hist'] if len(data_velas) >= 2 and 'MACD_Hist' in data_velas.columns else 0
             
-            # --- CREACIÓN DE FIGURA PLOTLY (4 SUBPLOTS) ---
+            # --- CREACIÓN DE FIGURA PLOTLY (4 SUBPLOTS) (Sin cambios) ---
             fig = make_subplots(
                 rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.02,
                 row_heights=[0.45, 0.15, 0.20, 0.20] 
             )
             
-            # --- Subplot 1: GRÁFICO DE VELAS y BB ---
+            # ... (Trazas de Candlestick, BB, RSI, MACD, Volumen se mantienen iguales)
             fig.add_trace(go.Candlestick(
                 x=data_velas.index, open=data_velas['open'], high=data_velas['high'],
                 low=data_velas['low'], close=data_velas['close'],
@@ -298,17 +296,14 @@ def obtener_datos():
                 name='Velas'
             ), row=1, col=1)
 
-            # Bandas de Bollinger (SMA, Upper, Lower)
             fig.add_trace(go.Scatter(x=data_velas.index, y=data_velas['Upper'], line=dict(color='rgba(255, 165, 0, 0.8)', width=1), name='Banda Superior'), row=1, col=1)
             fig.add_trace(go.Scatter(x=data_velas.index, y=data_velas['SMA'], line=dict(color=COLOR_ACCENT, width=1.5), name='SMA 20'), row=1, col=1)
             fig.add_trace(go.Scatter(x=data_velas.index, y=data_velas['Lower'], line=dict(color='rgba(255, 165, 0, 0.8)', width=1), name='Banda Inferior'), row=1, col=1)
             
-            # --- Subplot 2: RSI ---
             fig.add_trace(go.Scatter(x=data_velas.index, y=data_velas['RSI'], line=dict(color=COLOR_POSITIVE, width=1.5), name='RSI'), row=2, col=1)
             fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1, opacity=0.5)
             fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1, opacity=0.5)
 
-            # --- Subplot 3: MACD ---
             fig.add_trace(go.Bar(
                 x=data_velas.index, y=data_velas['MACD_Hist'], 
                 marker_color=data_velas['MACD_Hist'].apply(lambda x: COLOR_POSITIVE if x > 0 else COLOR_NEGATIVE), 
@@ -317,7 +312,6 @@ def obtener_datos():
             fig.add_trace(go.Scatter(x=data_velas.index, y=df_hist['MACD'], line=dict(color=COLOR_ACCENT, width=1.5), name='MACD'), row=3, col=1)
             fig.add_trace(go.Scatter(x=data_velas.index, y=df_hist['Signal_Line'], line=dict(color='orange', width=1), name='Señal'), row=3, col=1)
             
-            # --- Subplot 4: Volumen (Barra) ---
             fig.add_trace(go.Bar(
                 x=data_velas.index, 
                 y=data_velas['volume'],
@@ -325,7 +319,7 @@ def obtener_datos():
                 name='Volumen'
             ), row=4, col=1)
 
-            # --- Configuración de la Figura ---
+            # --- Configuración de la Figura (Sin cambios) ---
             fig.update_layout(
                 height=600, margin=dict(l=10, r=10, t=20, b=20),
                 paper_bgcolor=COLOR_CARD_BG, plot_bgcolor=COLOR_CARD_BG,
@@ -341,28 +335,18 @@ def obtener_datos():
             
             # --- Guardar datos ---
             data_display.append({
-                "Nombre": nombre, 
-                "Symbol": symbol,
-                "Precio": precio, 
-                "Var": var_pct, 
-                "Alerta": es_alerta,
-                "Figura_Plotly": fig,
-                "Volumen": volumen,
-                "Positivo": var_pct > 0,
-                "RSI_Hoy": rsi_hoy,
-                "MACD_Hist_Hoy": macd_hist_hoy,
-                "MACD_Hist_Ayer": macd_hist_ayer
+                "Nombre": nombre, "Symbol": symbol, "Precio": precio, "Var": var_pct, "Alerta": es_alerta, "Figura_Plotly": fig, "Volumen": volumen, "Positivo": var_pct > 0, "RSI_Hoy": rsi_hoy, "MACD_Hist_Hoy": macd_hist_hoy, "MACD_Hist_Ayer": macd_hist_ayer
             })
         except Exception as e:
-            # st.error(f"Error procesando {nombre} con Finnhub: {e}")
+            # Aquí capturamos cualquier error de procesamiento (ej. Plotly)
+            st.error(f"Falla interna en el procesamiento de {nombre}: {e}")
             continue
     
     return data_display
 
 
 # --- INTERFAZ DE USUARIO (DASHBOARD) (Sin cambios importantes) ---
-
-# ... (Código del selector de tema y barra lateral) ...
+# ... (switch_theme, sidebar, título y captions se mantienen iguales) ...
 def switch_theme():
     if st.session_state['theme'] == "Dark":
         st.session_state['theme'] = "Light"
@@ -381,7 +365,6 @@ with st.sidebar:
     st.divider()
 
 st.title("📈 Monitor Bolsa de Santiago Pro")
-# **Importante:** Actualizamos la fuente y el delay.
 st.caption("Gráfico de Velas con BB, RSI y MACD | Fuente: Finnhub.io (API REST, ~60s delay)") 
 
 col_info, col_refresh = st.columns([5,1])
@@ -397,12 +380,13 @@ st.divider()
 datos_completos = obtener_datos()
 
 if not datos_completos:
-    st.info("⏳ Conectando con el mercado (Finnhub)... Si persiste, revisa tu `FINNHUB_TOKEN` y los Tickers.")
+    # Este mensaje se queda, pero las advertencias de error HTTP aparecerán encima.
+    st.info("⏳ Conectando con el mercado (Finnhub)... Si persiste, revisa los mensajes de ERROR/ADVERTENCIA en la parte superior.")
 else:
     # 1. Reorganización y Cálculo de Promedios para Pestañas
     datos_por_categoria = {}
     tabs_labels = []
-
+    # ... (El resto de la lógica de pestañas y tarjetas se mantiene igual) ...
     for cat_name, tickers in TICKER_CATEGORIES.items():
         datos_de_esta_cat = [
             item for item in datos_completos if item['Nombre'] in tickers.keys()
@@ -414,7 +398,6 @@ else:
             
             icono = " 🟢" if promedio_var > 0 else " 🔴"
             
-            # Generar etiqueta de pestaña
             label_final = f"{cat_name}{icono} ({promedio_var:.2f}%)"
             tabs_labels.append(label_final)
             datos_por_categoria[label_final] = datos_de_esta_cat
@@ -424,7 +407,7 @@ else:
         tabs = st.tabs(tabs_labels)
         
         for i, label_final in enumerate(tabs_labels):
-            categoria = label_final.split(" ")[0] # Tomamos solo el nombre 
+            categoria = label_final.split(" ")[0]
             
             with tabs[i]:
                 datos_tab = datos_por_categoria[label_final]
@@ -439,34 +422,28 @@ else:
                         # ... (Todo el contenido de la tarjeta se mantiene igual) ...
                         with st.container(border=True):
                             
-                            # --- RESALTADO VISUAL DEL NOMBRE ---
                             nombre_clase = "positive-name" if item['Positivo'] else "negative-name"
                             st.markdown(
                                 f"<div class='{nombre_clase}'>{item['Nombre']}</div>", 
                                 unsafe_allow_html=True
                             )
                             
-                            # MOSTRAR EL VOLUMEN
                             volumen = item.get('Volumen', 0)
                             if volumen > 0:
-                                # Nota: El volumen de Finnhub 'quote' puede ser el volumen total del día
                                 volumen_formateado = f"{volumen:,.0f}".replace(",", "_").replace(".", ",").replace("_", ".")
                                 st.markdown(
                                     f"<div class='volume-subtitle'>Vol: {volumen_formateado}</div>", 
                                     unsafe_allow_html=True
                                 )
                                 
-                            # --- INDICADORES DE ANÁLISIS TÉCNICO EN TEXTO ---
                             indi_html = ""
                             
-                            # RSI (Sobrecampra > 70, Sobreventa < 30)
                             if item['RSI_Hoy'] is not None:
                                 if item['RSI_Hoy'] > 70:
                                     indi_html += f"<span class='indicator-box rsi-overbought'>RSI: Sobrecompra</span>"
                                 elif item['RSI_Hoy'] < 30:
                                     indi_html += f"<span class='indicator-box rsi-oversold'>RSI: Sobreventa</span>"
 
-                            # MACD (Cruce de la Señal)
                             if item['MACD_Hist_Ayer'] < 0 and item['MACD_Hist_Hoy'] > 0:
                                 indi_html += f"<span class='indicator-box macd-buy'>MACD: Cruce Alcista</span>"
                             elif item['MACD_Hist_Ayer'] > 0 and item['MACD_Hist_Hoy'] < 0:
@@ -475,7 +452,6 @@ else:
                             if indi_html:
                                 st.markdown(indi_html, unsafe_allow_html=True)
                                 
-                            # Métrica de precio y variación
                             st.metric(
                                 label="Precio Actual",
                                 value=f"$ {item['Precio']:,.2f}",
@@ -483,7 +459,6 @@ else:
                                 delta_color="normal" 
                             )
                             
-                            # Gráfico de Velas de Plotly
                             if 'Figura_Plotly' in item:
                                 st.plotly_chart(
                                     item['Figura_Plotly'], 
@@ -491,7 +466,6 @@ else:
                                     config={'displayModeBar': False} 
                                 )
 
-                            # Alerta de volatilidad
                             if item['Alerta']:
                                 st.warning("🔥 ALTA VOLATILIDAD")
                                 clave_sesion = f"msg_{item['Nombre']}_{datetime.now().hour}"
@@ -502,4 +476,3 @@ else:
     # --- RECARGA AUTOMÁTICA ---
     time.sleep(60) 
     st.rerun()
-
