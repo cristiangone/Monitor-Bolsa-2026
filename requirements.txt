@@ -2,8 +2,9 @@
 streamlit
 pandas
 requests
+pytz
 plotly
-yfinance
+
 
 
 
