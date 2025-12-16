@@ -103,40 +103,20 @@ except:
 
 
 # --- CONFIGURACIÓN DE ACTIVOS (Ajustado a Tickers de Finnhub/Bolsa de Santiago) ---
+
 UMBRAL_ALERTA = 2.5 
 
 TICKER_CATEGORIES = {
-    # Tickers basados en la convención de Finnhub (ej: Santiago Stock Exchange - SN)
-    # USD/CLP y commodities podrían usar tickers de Forex o Futuros si están disponibles.
-    # He usado los tickers más probables para Finnhub, ¡pero revísalos con tu cuenta!
-    "MACROECONOMÍA 🌎": {
-        "USD/CLP": "USDCLP=X", # Generalmente usado para Forex
-        "Cobre (Futuros)": "HG.1", 
-        "Petróleo WTI (Futuros)": "CL.1",
+    # ATENCIÓN: Tickers chilenos temporalmente deshabilitados para confirmar la conexión.
+    "PRUEBA Y CONEXIÓN ✅": {
+        "Apple Inc. (NASDAQ)": "AAPL", # Ticker universal
+        "Microsoft (NASDAQ)": "MSFT", # Ticker universal
+        "USD/CLP (Forex)": "USDCLP",   # Ticker de Forex sin el '=X' de Yahoo
     },
-    "COMMODITIES & ENERGÍA 🔋": {
-        "SQM-B (Litio)": "SN:SQM-B", # Formato de Bolsa de Santiago
-        "Copec": "SN:COPEC",
-    },
-    "BANCA 🏦": {
-        "Banco de Chile": "SN:CHILE",
-        "Banco Bci": "SN:BCI",
-    },
-    "RETAIL & MALLS 🛍️": {
-        "Falabella": "SN:FALABELLA",
-        "Cencosud": "SN:CENCOSUD",
-        "Ripley": "SN:RIPLEY",
-        "Parque Arauco": "SN:PARAUCO",
-    },
-    "OTROS SECTORES 🚀": {
-        "LATAM": "SN:LTM",
-        "Sonda (Tech)": "SN:SONDA",
-        "Socovesa": "SN:SOCOVESA"
-    }
+
 }
 
 TICKERS_PLANO = {nombre: symbol for cat in TICKER_CATEGORIES.values() for nombre, symbol in cat.items()}
-
 
 # --- FUNCIONES DE ANÁLISIS TÉCNICO (Sin cambios) ---
 def calcular_bollinger_bands(df, window=20, num_std=2):
@@ -522,3 +502,4 @@ else:
     # --- RECARGA AUTOMÁTICA ---
     time.sleep(60) 
     st.rerun()
+
